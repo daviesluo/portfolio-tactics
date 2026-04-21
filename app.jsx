@@ -29,6 +29,15 @@ function migrate(p) {
       ...Object.fromEntries(Object.entries(p.positions).filter(([k]) => k !== "GK" && k !== "CB")),
     };
   }
+  // v2 → v3 (BF-B): move BF-B from RB to CB2 and sync its shares/cost
+  if (p.positions.RB?.tickers?.includes("BF-B") && !(p.positions.CB2?.tickers || []).includes("BF-B")) {
+    p.positions.RB.tickers = p.positions.RB.tickers.filter(t => t !== "BF-B");
+    if (p.positions.CB2) p.positions.CB2.tickers = [...(p.positions.CB2.tickers || []), "BF-B"];
+    if (p.holdings["BF-B"]) {
+      if (p.holdings["BF-B"].shares === 0) p.holdings["BF-B"].shares = 0;
+      if (p.holdings["BF-B"].cost === 0) p.holdings["BF-B"].cost = 0;
+    }
+  }
   // v2 → v3: refresh labels + default subtitles from INITIAL_PORTFOLIO for untouched slots.
   // Also prune any position keys not in the current schema (legacy leftovers).
   const validKeys = new Set(Object.keys(window.INITIAL_PORTFOLIO.positions));
@@ -106,15 +115,19 @@ function App() {
     }
     // If failed, try again shortly
     if (src === "error") {
-      setTimeout(() => { doRefresh(); }, 3000);
+      setTimeout(() => doRefreshRef.current(), 3000);
     }
   }, [portfolio.holdings]); // only re-bind when holdings change
 
+  // Always keep ref pointing to the latest doRefresh so the interval
+  // picks up newly added tickers without restarting.
+  const doRefreshRef = useRef(doRefresh);
+  useEffect(() => { doRefreshRef.current = doRefresh; }, [doRefresh]);
+
   useEffect(() => {
-    doRefresh();
-    const id = setInterval(doRefresh, REFRESH_MS);
+    doRefreshRef.current();
+    const id = setInterval(() => doRefreshRef.current(), REFRESH_MS);
     return () => clearInterval(id);
-    // eslint-disable-next-line
   }, []);
 
   const metrics = useMemo(() => computeMetrics(portfolio), [portfolio]);
