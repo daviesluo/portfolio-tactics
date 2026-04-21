@@ -4,9 +4,9 @@ window.INITIAL_PORTFOLIO = {
   positions: {
     GK:   { label: "GK",  subtitle: "Cash",          role: "GK",  tickers: ["CASH"] },
     CB1:  { label: "CB",  subtitle: "",              role: "DEF", tickers: [] },
-    CB2:  { label: "CB",  subtitle: "",              role: "DEF", tickers: [] },
+    CB2:  { label: "CB",  subtitle: "BRK.B",          role: "DEF", tickers: ["BRK-B"] },
     LB:   { label: "LB",  subtitle: "Entertainment", role: "DEF", tickers: ["NFLX"] },
-    RB:   { label: "RB",  subtitle: "Finance",       role: "DEF", tickers: ["BX", "BRK-B"] },
+    RB:   { label: "RB",  subtitle: "Finance",       role: "DEF", tickers: ["BX"] },
     CDM:  { label: "CDM", subtitle: "Electric Power",role: "MID", tickers: ["CEG", "VST"] },
     CM:   { label: "CM",  subtitle: "BIG 7",         role: "MID", tickers: ["NVDA","GOOG","META","AAPL","MSFT","AMZN","TSLA"] },
     CAM:  { label: "CM",  subtitle: "AI Infra",      role: "MID", tickers: ["AVGO","TEM","TSM","SOUN","NVTS","MU","UBER","NET","ANET","VRT"] },
