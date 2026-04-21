@@ -4,7 +4,7 @@ window.INITIAL_PORTFOLIO = {
   positions: {
     GK:   { label: "GK",  subtitle: "Cash",          role: "GK",  tickers: ["CASH"] },
     CB1:  { label: "CB",  subtitle: "",              role: "DEF", tickers: [] },
-    CB2:  { label: "CB",  subtitle: "",              role: "DEF", tickers: [] },
+    CB2:  { label: "CB",  subtitle: "",          role: "DEF", tickers: [] },
     LB:   { label: "LB",  subtitle: "Entertainment", role: "DEF", tickers: [] },
     RB:   { label: "RB",  subtitle: "Finance",       role: "DEF", tickers: [] },
     CDM:  { label: "CDM", subtitle: "Electric Power",role: "MID", tickers: [] },
