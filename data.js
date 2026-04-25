@@ -34,3 +34,9 @@ window.INITIAL_PORTFOLIO = {
     "BMNR":     { shares: 0, cost: 0, lastPrice: 22.59,  dayPct: +0.27,  prevClose: 22.53 },
   },
 };
+
+// Per-lot purchase history. Keyed by ticker. Each lot: { date, shares, cost }.
+// Used to backfill `lots` on holdings that don't have it yet, so the YTD chart
+// can compute true historical portfolio value at each trading day.
+// Tickers not listed here default to a single lot dated 2025-01-01.
+window.INITIAL_LOTS = {};
