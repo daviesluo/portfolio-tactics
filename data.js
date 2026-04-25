@@ -52,3 +52,9 @@ window.INITIAL_PORTFOLIO = {
     "VST":      { shares: 0, cost: 0, lastPrice: 155.11, dayPct: -2.81,  prevClose: 159.59 },
   },
 };
+
+// Per-lot purchase history. Keyed by ticker. Each lot: { date, shares, cost }.
+// Used to backfill `lots` on holdings that don't have it yet, so the YTD chart
+// can compute true historical portfolio value at each trading day.
+// Tickers not listed here default to a single lot dated 2025-01-01.
+window.INITIAL_LOTS = {};
