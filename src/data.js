@@ -35,8 +35,3 @@ export const INITIAL_PORTFOLIO = {
   },
 };
 
-// Per-lot purchase history. Keyed by ticker. Each lot: { date, shares, cost }.
-// Used to backfill `lots` on holdings that don't have it yet, so the YTD chart
-// can compute true historical portfolio value at each trading day.
-// Tickers not listed here default to a single lot dated 2025-01-01.
-export const INITIAL_LOTS = {};
