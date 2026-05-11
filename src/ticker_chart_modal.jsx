@@ -1068,7 +1068,14 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
             const hCur = holding.currency || 'USD';
             const hSym = SYMBOL_BY_CUR[hCur] || '$';
             const fx        = fxToUSD(hCur, marketData);
-            const livePrice = (useExt && holding.extPrice != null && holding.extPrice > 0)
+            // Same gate the chart's right edge uses: trust `extPrice`
+            // only when AH bars exist AND extPrice is within [•] % of
+            // the latest bar — otherwise Yahoo's bogus postMarketPrice
+            // for OTC ADRs like NSRGY shows up as today's open and
+            // makes Value / G/L lie. Without this check the stats row
+            // would still print +$[•] (+[•]%) for NSRGY even after
+            // the chart's right edge was corrected.
+            const livePrice = (useExt && hasExtendedBars && holding.extPrice != null && holding.extPrice > 0)
                                 ? holding.extPrice
                                 : holding.lastPrice;
             const valueUsd  = holding.shares * livePrice * fx;
