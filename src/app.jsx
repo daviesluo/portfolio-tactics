@@ -171,7 +171,17 @@ function Board({ isReadOnly }) {
   const [flashTickers, setFlashTickers] = useState({});
   const [dragging, setDragging] = useState(null);
   const [extendedHours, setExtendedHours] = useState(false);
-  const [marketData, setMarketData] = useState({});
+  // Seed marketData with last-known FX rates from localStorage so the
+  // first metrics compute uses real cross-rates (~yesterday's, well
+  // inside a percent of live) instead of fxRateToUSD's silent [•]:[•]
+  // fallback. Before this, on cold start CNY-denominated holdings
+  // briefly showed at native × [•] USD = ~[•]× inflated (and GBP at
+  // native × [•] = ~[•] % deflated), then corrected on the first
+  // live tick — the user reported the portfolio total flashing
+  // $[•] k before settling at $[•] k. Storage.loadFxCache returns
+  // `{}` when the cache is missing or older than [•] days, so callers
+  // that need to detect "no FX yet" still can.
+  const [marketData, setMarketData] = useState(() => Storage.loadFxCache());
   // "Has the first successful fetchTickers reply landed yet?" — used
   // by Header to delay rendering the red FX MISSING pill until we've
   // actually had a market-data tick. Otherwise every cold start
@@ -251,6 +261,9 @@ function Board({ isReadOnly }) {
       }
       setMarketData(mcResult);
       setMarketDataReady(true);
+      // Persist this tick's FX rates so the next cold start can seed
+      // marketData with them instead of falling back to 1:1.
+      Storage.saveFxCache(mcResult);
     }
     setSource(src);
     setPortfolio(prev => {
