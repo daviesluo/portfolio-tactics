@@ -1,27 +1,27 @@
-// Supabase Edge Function: fundamentals
+// Supabase Edge Function: fundamentals (rev: PR #[•] USD-anchor)
 //
 // Returns current TTM P/E + trailing EPS for a list of tickers from
 // two sources, picked by symbol:
 //
-//   1. Individual stocks → Finnhub `/stock/metric` (free tier:
-//      60 calls / minute, no payment info).
+//   [•]. Individual stocks → Finnhub `/stock/metric` (free tier:
+//      [•] calls / minute, no payment info).
 //
-//   2. Four big US indices (^GSPC / ^NDX / ^RUT / ^SOX) → Alpha
+//   [•]. Four big US indices (^GSPC / ^NDX / ^RUT / ^SOX) → Alpha
 //      Vantage `OVERVIEW` against ETF proxies (SPY / QQQ / IWM /
-//      SOXX), with a 24 h server-side cache in
+//      SOXX), with a [•] h server-side cache in
 //      `index_fundamentals_cache`. AV's free tier enforces a hard
-//      "1 request per second" pace plus a 25 / day total — so the
-//      cache + serial dispatch (1.2 s between calls in this Edge
+//      "[•] request per second" pace plus a [•] / day total — so the
+//      cache + serial dispatch ([•] s between calls in this Edge
 //      Function invocation) keep us comfortably inside both ceilings
-//      with a 4-ETF working set.
+//      with a [•]-ETF working set.
 //
 // Layered fallback for index P/E (newest → oldest data):
-//   a. Fresh cache (< 24 h)               — almost every request
-//   b. Live Alpha Vantage                 — once per ETF per 24 h
+//   a. Fresh cache (< [•] h)               — almost every request
+//   b. Live Alpha Vantage                 — once per ETF per [•] h
 //   c. Stale cache (any age, last-known)  — when AV is rate-limited
 //   d. Hardcoded INDEX_PE_FALLBACK        — first deploy / total outage
 //
-// 3-year-average P/E is hardcoded since AV's free tier doesn't
+// [•]-year-average P/E is hardcoded since AV's free tier doesn't
 // expose historical annuals; refresh ~yearly.
 //
 // Env:
@@ -33,8 +33,8 @@
 // Call: GET /functions/v1/fundamentals?tickers=NVDA,GOOG,^GSPC
 // Returns:
 //   {
-//     NVDA:  { pe: 40.16, eps: 4.90, pe3yAvg: 43.13 },
-//     ^GSPC: { pe: 27.5,  eps: 0,    pe3yAvg: 25.0 }
+//     NVDA:  { pe: [•], eps: [•], pe3yAvg: [•] },
+//     ^GSPC: { pe: [•],  eps: [•]    pe3yAvg: [•] }
 //   }
 
 const FINNHUB_API_KEY            = Deno.env.get("FINNHUB_API_KEY") ?? "";
