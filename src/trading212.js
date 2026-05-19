@@ -2,9 +2,12 @@
 //
 // Calls the `trading212` Edge Function on every doRefresh tick and
 // returns the server-cached portfolio snapshot for the allow-listed
-// tickers (currently VUKE.L / VMID.L — the user DCAs into those
-// daily on T212, which would otherwise require typing every small
-// buy into EditTickerModal). The Edge Function does the actual
+// tickers (currently IWDA.L / VWRL.L — USD-denominated […] ETFs
+// on LSE that the user DCAs into via T212's cashback + Spare-Change
+// auto-invest, both of which settle in USD; previously VUKE.L /
+// VMID.L when the auto-invest was assumed GBP. Without the auto-sync
+// the user would have to type every small buy into EditTickerModal).
+// The Edge Function does the actual
 // rate-limited upstream call to T212 with 120 s caching (4× T212's
 // 1-req-per-30-s window) + an atomic Postgres claim that lets only
 // one worker per window call live T212 regardless of how many
