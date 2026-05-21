@@ -14,6 +14,8 @@
 import { assert, assertEquals } from "https://deno.land/std@0.218.0/assert/mod.ts";
 import {
   shapeT212Portfolio,
+  t212TickerToYahoo,
+  unpackCache,
   cacheIsFresh,
   basicAuthHeader,
   b64url,
@@ -22,54 +24,77 @@ import {
   constantTimeEqual,
 } from "./index.ts";
 
-Deno.test("shapeT212Portfolio — IWDAl_EQ / VWRLl_EQ map to Yahoo tickers; cost is per-share USD", () => {
+Deno.test("t212TickerToYahoo — allow-list, generic US, generic LSE, unknown", () => {
+  assertEquals(t212TickerToYahoo("IWDAl_EQ"), "IWDA.L");   // allow-list
+  assertEquals(t212TickerToYahoo("VWRLl_EQ"), "VWRL.L");   // allow-list
+  assertEquals(t212TickerToYahoo("KO_US_EQ"), "KO");   // generic US
+  assertEquals(t212TickerToYahoo("HOOD_US_EQ"), "HOOD");   // generic US
+  assertEquals(t212TickerToYahoo("TSCOl_EQ"), "TSCO.L");   // generic LSE
+  assertEquals(t212TickerToYahoo("SOMEd_DE_EQ"), null);    // other exchange → null
+  assertEquals(t212TickerToYahoo(""), null);
+});
+
+Deno.test("shapeT212Portfolio — holdings = allow-list shares/cost (USD per share)", () => {
   // T212's averagePrice for IWDA.L / VWRL.L is USD per share — these
   // are USD-denominated UCITS ETFs on LSE and T212 reports in the
-  // instrument's settle currency. The Edge Function passes
-  // averagePrice through unchanged; lot.cost / h.cost is per-share
-  // AC everywhere in the app (metrics.js multiplies h.shares * h.cost
-  // for total cost; weightedAvgCost does shares * cost).
+  // instrument's settle currency. cost is per-share AC everywhere
+  // (metrics.js multiplies h.shares * h.cost for total cost).
   const raw = [
-    { ticker: "IWDAl_EQ", quantity: 12.5, averagePrice: 96.00 },
-    { ticker: "VWRLl_EQ", quantity: 30,   averagePrice: 12.345 },
+    { ticker: "IWDAl_EQ", quantity: 12.5, averagePrice: 96.00, currentPrice: 98 },
+    { ticker: "VWRLl_EQ", quantity: 30,   averagePrice: 12.345, currentPrice: 13 },
   ];
-  const out = shapeT212Portfolio(raw);
-  assertEquals(out["IWDA.L"].shares, 12.5);
-  assertEquals(out["IWDA.L"].cost, 96.00);
-  assertEquals(out["VWRL.L"].shares, 30);
-  assertEquals(out["VWRL.L"].cost, 12.345);
+  const { holdings } = shapeT212Portfolio(raw);
+  assertEquals(holdings["IWDA.L"], { shares: 12.5, cost: 96.00 });
+  assertEquals(holdings["VWRL.L"], { shares: 30, cost: 12.345 });
+  // No `price` key on holdings — price lives in the separate map now.
+  assertEquals("price" in holdings["IWDA.L"], false);
 });
 
-Deno.test("shapeT212Portfolio — non-allowlisted tickers are dropped", () => {
+Deno.test("shapeT212Portfolio — prices = EVERY recognised holding's currentPrice (generic map)", () => {
   const raw = [
-    { ticker: "KO_US_EQ", quantity: 10, averagePrice: 150 },
-    { ticker: "IWDAl_EQ", quantity: 5,    averagePrice: 90.00 },
+    { ticker: "IWDAl_EQ", quantity: 12.5, averagePrice: 96.00, currentPrice: 98.42 },
+    { ticker: "KO_US_EQ", quantity: 3, averagePrice: 200, currentPrice: 234.5 },
+    { ticker: "HOOD_US_EQ", quantity: 9, averagePrice: 30, currentPrice: 0 },   // non-positive → no price
   ];
-  const out = shapeT212Portfolio(raw);
-  assert(!("KO" in out));
-  assert(!("KO_US_EQ" in out));
-  assertEquals(Object.keys(out), ["IWDA.L"]);
+  const { holdings, prices } = shapeT212Portfolio(raw);
+  // Price map carries the allow-list ETF AND the US stock.
+  assertEquals(prices["IWDA.L"], 98.42);
+  assertEquals(prices["KO"], 234.5);
+  assertEquals("HOOD" in prices, false);  // 0 currentPrice dropped
+  // But holdings (shares/cost sync) is still allow-list only — KO is
+  // priced but NOT shares/cost-synced.
+  assertEquals(Object.keys(holdings), ["IWDA.L"]);
+  assertEquals("KO" in holdings, false);
 });
 
-Deno.test("shapeT212Portfolio — non-positive quantity / averagePrice are dropped", () => {
+Deno.test("shapeT212Portfolio — non-positive quantity / averagePrice drop the allow-list holding (price may still surface)", () => {
   const raw = [
-    { ticker: "IWDAl_EQ", quantity: 0,   averagePrice: 96 },
-    { ticker: "IWDAl_EQ", quantity: -1,  averagePrice: 96 },
-    { ticker: "IWDAl_EQ", quantity: 10,  averagePrice: 0 },
-    { ticker: "IWDAl_EQ", quantity: 10,  averagePrice: -50 },
-    { ticker: "IWDAl_EQ", quantity: NaN, averagePrice: 96 },
+    { ticker: "IWDAl_EQ", quantity: 0,   averagePrice: 96, currentPrice: 98 },
+    { ticker: "IWDAl_EQ", quantity: 10,  averagePrice: 0,  currentPrice: 98 },
   ];
-  const out = shapeT212Portfolio(raw);
-  assertEquals(out, {});
+  const { holdings, prices } = shapeT212Portfolio(raw);
+  assertEquals(holdings, {});         // no valid shares/cost
+  assertEquals(prices["IWDA.L"], 98); // price still recognised
 });
 
-Deno.test("shapeT212Portfolio — malformed input returns empty map (not throws)", () => {
-  assertEquals(shapeT212Portfolio(null), {});
-  assertEquals(shapeT212Portfolio(undefined), {});
-  assertEquals(shapeT212Portfolio({}), {});
-  assertEquals(shapeT212Portfolio("nope"), {});
-  assertEquals(shapeT212Portfolio([null, undefined, "x", 42]), {});
-  assertEquals(shapeT212Portfolio([{ ticker: 42 }, { quantity: 5 }]), {});
+Deno.test("shapeT212Portfolio — malformed input returns empty maps (not throws)", () => {
+  assertEquals(shapeT212Portfolio(null), { holdings: {}, prices: {} });
+  assertEquals(shapeT212Portfolio(undefined), { holdings: {}, prices: {} });
+  assertEquals(shapeT212Portfolio({}), { holdings: {}, prices: {} });
+  assertEquals(shapeT212Portfolio("nope"), { holdings: {}, prices: {} });
+  assertEquals(shapeT212Portfolio([null, undefined, "x", 42]), { holdings: {}, prices: {} });
+  assertEquals(shapeT212Portfolio([{ ticker: 42 }, { quantity: 5 }]), { holdings: {}, prices: {} });
+});
+
+Deno.test("unpackCache — new {holdings, prices} shape passes through", () => {
+  const data = { holdings: { "IWDA.L": { shares: 1, cost: 90 } }, prices: { "KO": 234 } };
+  assertEquals(unpackCache(data), data);
+});
+
+Deno.test("unpackCache — legacy holdings-map shape is treated as holdings with empty prices", () => {
+  // Pre-this-version cache rows stored the holdings map directly.
+  const legacy = { "IWDA.L": { shares: 1, cost: 90 } };
+  assertEquals(unpackCache(legacy), { holdings: legacy, prices: {} });
 });
 
 Deno.test("cacheIsFresh — within TTL is fresh", () => {
