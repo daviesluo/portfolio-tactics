@@ -40,6 +40,27 @@ Deno.test("shapeT212Portfolio — IWDAl_EQ / VWRLl_EQ map to Yahoo tickers; cost
   assertEquals(out["VWRL.L"].cost, 12.345);
 });
 
+Deno.test("shapeT212Portfolio — currentPrice surfaces as `price` (broker's live quote)", () => {
+  const raw = [
+    { ticker: "IWDAl_EQ", quantity: 12.5, averagePrice: 96.00, currentPrice: 98.42 },
+    { ticker: "VWRLl_EQ", quantity: 30,   averagePrice: 12.345, currentPrice: 12.90 },
+  ];
+  const out = shapeT212Portfolio(raw);
+  assertEquals(out["IWDA.L"].price, 98.42);
+  assertEquals(out["VWRL.L"].price, 12.90);
+});
+
+Deno.test("shapeT212Portfolio — missing / non-positive currentPrice → `price` omitted (client falls back to Yahoo)", () => {
+  const raw = [
+    { ticker: "IWDAl_EQ", quantity: 5, averagePrice: 90 },                     // no currentPrice
+    { ticker: "VWRLl_EQ", quantity: 5, averagePrice: 10, currentPrice: 0 },    // non-positive
+  ];
+  const out = shapeT212Portfolio(raw);
+  assertEquals(out["IWDA.L"].shares, 5);
+  assertEquals("price" in out["IWDA.L"], false);
+  assertEquals("price" in out["VWRL.L"], false);
+});
+
 Deno.test("shapeT212Portfolio — non-allowlisted tickers are dropped", () => {
   const raw = [
     { ticker: "KO_US_EQ", quantity: 10, averagePrice: 150 },
