@@ -16,6 +16,7 @@ import {
   shapeT212Portfolio,
   t212TickerToYahoo,
   unpackCache,
+  mergeShaped,
   cacheIsFresh,
   basicAuthHeader,
   b64url,
@@ -23,6 +24,36 @@ import {
   verifyToken,
   constantTimeEqual,
 } from "./index.ts";
+
+Deno.test("mergeShaped — unions prices; passes through disjoint holdings (invest + ISA)", () => {
+  const invest = {
+    holdings: { "IWDA.L": { shares: 12, cost: 96 } },
+    prices: { "IWDA.L": 98, "HOOD": 50 },
+  };
+  const isa = {
+    holdings: {},
+    prices: { "KO": 234, "PEP": 412 },   // ISA stocks — only prices, no allow-list shares/cost
+  };
+  const out = mergeShaped(invest, isa);
+  assertEquals(out.holdings, { "IWDA.L": { shares: 12, cost: 96 } });
+  assertEquals(out.prices, { "IWDA.L": 98, "HOOD": 50, "KO": 234, "PEP": 412 });
+});
+
+Deno.test("mergeShaped — a holding in BOTH accounts sums shares + weights cost", () => {
+  const a = { holdings: { "IWDA.L": { shares: 10, cost: 100 } }, prices: { "IWDA.L": 110 } };
+  const b = { holdings: { "IWDA.L": { shares: 30, cost: 120 } }, prices: { "IWDA.L": 110 } };
+  const out = mergeShaped(a, b);
+  // [•] shares; weighted cost = ([•]×[•] + [•]×[•]) / [•] = ([•]+[•])/[•] = [•].
+  assertEquals(out.holdings["IWDA.L"].shares, 40);
+  assertEquals(out.holdings["IWDA.L"].cost, 115);
+  assertEquals(out.prices["IWDA.L"], 110);
+});
+
+Deno.test("mergeShaped — empty ISA side is a no-op (invest-only / ISA key absent)", () => {
+  const invest = { holdings: { "IWDA.L": { shares: 5, cost: 90 } }, prices: { "IWDA.L": 92 } };
+  const out = mergeShaped(invest, { holdings: {}, prices: {} });
+  assertEquals(out, invest);
+});
 
 Deno.test("t212TickerToYahoo — allow-list, generic US, generic LSE, unknown", () => {
   assertEquals(t212TickerToYahoo("IWDAl_EQ"), "IWDA.L");   // allow-list
