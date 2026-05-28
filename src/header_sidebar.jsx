@@ -189,7 +189,16 @@ function Header({ metrics, marketData, marketDataReady, source, lastUpdated, isR
    *  conversion at every call site. */
   const fmCcy = React.useCallback(
     /** @param {number | null | undefined} n @param {{signed?: boolean}} [opts] */
-    (n, opts) => fmM(typeof n === 'number' ? n * ccyRate : n, { ...opts, symbol: ccySym }),
+    (n, opts) => fmM(typeof n === 'number' ? n * ccyRate : n, {
+      ...opts, symbol: ccySym,
+      // `compact: false` — the scoreboard expands M/B/T to full
+      // digits so e.g. a $[•] K portfolio doesn't read as "¥[•]"
+      // after the CNY cycle, but as the actual ¥[•]. Tier
+      // collapse applies app-wide everywhere else (sidebar /
+      // cards / modal) where the smaller font would otherwise
+      // overflow.
+      compact: false,
+    }),
     [ccyRate, ccySym],
   );
 
