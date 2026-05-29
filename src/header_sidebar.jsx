@@ -182,11 +182,12 @@ function Header({ metrics, marketData, marketDataReady, source, lastUpdated, isR
   // of the $value), desktop slots it row 1 col 3 (right of the eye
   // in the label row).
   const [ccy, setCcy] = React.useState(/** @type {'USD'|'GBP'|'CNY'} */ ('USD'));
-  // Mobile-only precision drop on DAY CHANGE — user prefers integer
-  // dollars + integer percent ("+$[•] (+[•]%)") over the legacy
-  // two-decimal percent ("+$[•] (+[•]%)") on the narrow phone
-  // viewport. Desktop keeps the full [•]-decimal precision since the
-  // scoreboard cell has plenty of horizontal headroom there.
+  // Mobile-only precision drop on DAY CHANGE's dollar amount. Sub-
+  // \$[•] swings would otherwise read as "+\$[•]" on the narrow
+  // viewport — the user prefers the integer rounding ("+\$[•]") to
+  // free up horizontal real estate. The percentage stays at the
+  // [•]-decimal default ("+[•] %"); the user wants its precision
+  // preserved for nuance even on mobile.
   const isDesktop = useIsDesktop();
   const dayPrec = isDesktop ? 2 : 0;
   const cycleCcy = React.useCallback(() => {
@@ -303,7 +304,7 @@ function Header({ metrics, marketData, marketDataReady, source, lastUpdated, isR
           <div className="sb-label">DAY CHANGE</div>
           <div className={`sb-value mono sb-change-row${sbFlash.day ? " sb-flash-" + sbFlash.day : ""}`} style={{ color: pcC(metrics.dayPct) }}>
             <span>{hideValues ? mask(fmCcy(metrics.dayChange, { signed: true, precision: dayPrec })) : fmCcy(metrics.dayChange, { signed: true, precision: dayPrec })}</span>
-            <span className="sb-pct">({fmP(metrics.dayPct, { precision: dayPrec })})</span>
+            <span className="sb-pct">({fmP(metrics.dayPct)})</span>
           </div>
         </div>
         <div className="scoreboard-divider" />
