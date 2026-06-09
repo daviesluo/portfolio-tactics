@@ -49,6 +49,7 @@ describe('detectCurrency', () => {
     expect(detectCurrency('AIR.PA')).toBe('EUR');
     expect(detectCurrency('HEIA.AS')).toBe('EUR');
     expect(detectCurrency('SAP.DE')).toBe('EUR');
+    expect(detectCurrency('MBG.SG')).toBe('EUR'); // Stuttgart (German regional)
     expect(detectCurrency('ENEL.MI')).toBe('EUR');
     expect(detectCurrency('SAN.MC')).toBe('EUR');
   });
