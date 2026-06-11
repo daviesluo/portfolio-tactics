@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isCrypto, isFutures, isForex, isIndex, isExchangeListed,
   isCnFund, isPvt, isDailyOnly, isUsEquity, hasOvernightSession,
-  isEuroExchange,
+  isEuroExchange, isRegularSessionOnly,
 } from './ticker_class.js';
 
 describe('ticker_class', () => {
@@ -108,14 +108,33 @@ describe('ticker_class', () => {
     expect(hasOvernightSession('NBIS')).toBe(true);
     expect(hasOvernightSession('GOOG')).toBe(true);
     expect(hasOvernightSession('META')).toBe(true);
-    // NSRGY is a US-shaped OTC ADR with no overnight session — excluded
-    // (case-insensitive) so it doesn't show a stale close as a fake dot.
+    // NSRGY / RHHBY are US-shaped OTC ADRs with no overnight session —
+    // excluded (case-insensitive) so they don't show a stale close as a
+    // fake dot.
     expect(hasOvernightSession('NSRGY')).toBe(false);
     expect(hasOvernightSession('nsrgy')).toBe(false);
+    expect(hasOvernightSession('RHHBY')).toBe(false);
     // Everything isUsEquity already rejects stays rejected.
     expect(hasOvernightSession('IWDA.L')).toBe(false);
     expect(hasOvernightSession('005827')).toBe(false);
     expect(hasOvernightSession('BTC-USD')).toBe(false);
     expect(hasOvernightSession('')).toBe(false);
+  });
+
+  it('isRegularSessionOnly = foreign listings + OTC ADRs (drives the 1D no-OPEN-line rule)', () => {
+    // Foreign exchange listings: a single daily session, no US ext-hours.
+    expect(isRegularSessionOnly('VUKE.L')).toBe(true);   // LSE
+    expect(isRegularSessionOnly('AIR.PA')).toBe(true);  // Euronext
+    expect(isRegularSessionOnly('0700.HK')).toBe(true);  // Hong Kong
+    // US-shaped OTC ADRs (the NO_OVERNIGHT_SESSION set).
+    expect(isRegularSessionOnly('NSRGY')).toBe(true);
+    expect(isRegularSessionOnly('RHHBY')).toBe(true);
+    // Normal US equities DO have extended hours — excluded.
+    expect(isRegularSessionOnly('NVDA')).toBe(false);
+    expect(isRegularSessionOnly('GOOG')).toBe(false);
+    // Non-equity classes are not "regular-session equities" either.
+    expect(isRegularSessionOnly('BTC-USD')).toBe(false);
+    expect(isRegularSessionOnly('^GSPC')).toBe(false);
+    expect(isRegularSessionOnly('')).toBe(false);
   });
 });
