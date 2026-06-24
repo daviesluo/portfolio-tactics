@@ -52,6 +52,15 @@ export const COMPANY_NAMES = {
   'CAT': 'Caterpillar Inc.',
   'ORLY': 'O’Reilly Automotive',
   'BF-B': 'Brown-Forman Corporation',
+  'SPCX': 'Space Exploration Technologies Corp.',
+  'PLTR': 'Palantir Technologies Inc.',
+  'BE': 'Bloom Energy Corporation',
+  'NKE': 'NIKE, Inc.',
+  'NSRGY': 'Nestlé S.A.',
+  'CVX': 'Chevron Corporation',
+  'VWRL.L': 'Vanguard FTSE All-World UCITS ETF',
+  'IWDA.L': 'iShares Core MSCI World UCITS ETF (Acc)',
+  '005827': '易方达蓝筹精选混合',
 };
 
 /**
