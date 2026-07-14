@@ -2,6 +2,15 @@
 // Tiles sized by USD market value; colour-coded by day % change.
 import React from 'react';
 
+// Heatmap-only display aliases — holdings whose Yahoo symbol is an opaque
+// foreign-listing code; the tile shows the company's home-market symbol
+// instead. Applied AFTER the suffix strip so every variant of the listing
+// (MBG / MBG.F / MBG.DE) maps. Display-only, like the strip itself — the
+// real ticker stays everywhere else in the app (players, lists, modal) and
+// on tile.ticker for keys / clicks. MBG = Mercedes-Benz Group’s German
+// listing; its home ([…]) symbol is SAND.
+const HEATMAP_TICKER_ALIASES = { 'MBG': 'SAND' };
+
 // Display label for a heatmap tile — strips the Yahoo exchange suffix
 // (AIR.PA → AIR, VUKE.L → VUKE, 0700.HK → [•]) so the tight tiles
 // aren't cluttered by ".PA" / ".L". Display-only: tile.ticker keeps the
@@ -11,7 +20,8 @@ import React from 'react';
 // hyphenated symbols (BF-B, BTC-USD) and ^-prefixed indices are left
 // intact, and bare CN fund codes (005827) have nothing to strip.
 export function displayTicker(ticker) {
-  return ticker.replace(/\.[A-Za-z]{1,4}$/, '');
+  const stripped = ticker.replace(/\.[A-Za-z]{1,4}$/, '');
+  return HEATMAP_TICKER_ALIASES[stripped] || stripped;
 }
 
 // ── Treemap layout (recursive binary split) ──────────────────────────────────

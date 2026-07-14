@@ -28,4 +28,13 @@ describe('displayTicker', () => {
     expect(displayTicker('BF-B')).toBe('BF-B');
     expect(displayTicker('BTC-USD')).toBe('BTC-USD');
   });
+
+  it('maps aliased foreign-listing codes to the home-market symbol (MBG → SAND)', () => {
+    // Mercedes-Benz Group’s German listing — heatmap tiles show the
+    // Stockholm home symbol. Applied after the suffix strip so every
+    // listing variant maps; everywhere else in the app keeps MBG.
+    expect(displayTicker('MBG')).toBe('SAND');
+    expect(displayTicker('MBG.F')).toBe('SAND');
+    expect(displayTicker('MBG.DE')).toBe('SAND');
+  });
 });
