@@ -7,9 +7,13 @@ import {
   isWeekendDeadZone,
   isHolidaySession,
   shouldRecord,
+  ukParts,
+  isDaySessionWindow,
+  isDaySessionTicker,
   t212TickerToYahoo,
   hasOvernightSession,
   extractOvernightPrices,
+  extractPricesFor,
   mergePriceMaps,
 } from "./index.ts";
 
@@ -75,6 +79,41 @@ Deno.test("t212TickerToYahoo: US suffix, LSE suffix, aliases", () => {
   assertEquals(t212TickerToYahoo("FB_US_EQ"), "META");
   assertEquals(t212TickerToYahoo("GOOGL_US_EQ"), "GOOG");
   assertEquals(t212TickerToYahoo("WEIRD_SHAPE"), null);
+  // Deutsche Börse `d` venue suffix → Yahoo Frankfurt `.F` (digits-leading
+  // codes like MBG must map — the day-session recording depends on it).
+  assertEquals(t212TickerToYahoo("MBGd_EQ"), "MBG.F");
+  assertEquals(t212TickerToYahoo("SAPd_EQ"), "SAP.F");
+});
+
+Deno.test("isDaySessionWindow: 07:00-21:00 Europe/London, weekdays only (DST-safe)", () => {
+  // BST (summer, UK = UTC+1): Wed 2026-07-15.
+  assertEquals(isDaySessionWindow(new Date(Date.UTC(2026, 6, 15, 6, 0))), true);   // 07:00 UK — opens
+  assertEquals(isDaySessionWindow(new Date(Date.UTC(2026, 6, 15, 5, 55))), false); // 06:55 UK — before
+  assertEquals(isDaySessionWindow(new Date(Date.UTC(2026, 6, 15, 19, 55))), true); // 20:55 UK — still in
+  assertEquals(isDaySessionWindow(new Date(Date.UTC(2026, 6, 15, 20, 0))), false); // 21:00 UK — closed
+  // GMT (winter, UK = UTC): Wed 2026-01-14.
+  assertEquals(isDaySessionWindow(new Date(Date.UTC(2026, 0, 14, 7, 0))), true);   // 07:00 UK
+  assertEquals(isDaySessionWindow(new Date(Date.UTC(2026, 0, 14, 21, 0))), false); // 21:00 UK
+  // Weekend: Sat 2026-07-18 midday.
+  assertEquals(isDaySessionWindow(new Date(Date.UTC(2026, 6, 18, 12, 0))), false);
+});
+
+Deno.test("isDaySessionTicker + extractPricesFor: MBG.F recorded via the day predicate, not the overnight one", () => {
+  assertEquals(isDaySessionTicker("MBG.F"), true);
+  assertEquals(isDaySessionTicker("KO"), false);
+  const positions = [
+    { ticker: "MBGd_EQ", currentPrice: 3.8 },
+    { ticker: "KO_US_EQ", currentPrice: 200 },
+  ];
+  // Day predicate alone → only MBG.F.
+  assertEquals(extractPricesFor(positions, isDaySessionTicker), { "MBG.F": 3.8 });
+  // Overnight predicate alone → only KO (unchanged behaviour).
+  assertEquals(extractOvernightPrices(positions), { KO: 200 });
+  // Union (what the handler builds when both windows are open).
+  assertEquals(
+    extractPricesFor(positions, (y) => hasOvernightSession(y) || isDaySessionTicker(y)),
+    { "MBG.F": 3.8, KO: 200 },
+  );
 });
 
 Deno.test("hasOvernightSession: US equities only, NSRGY excluded", () => {
