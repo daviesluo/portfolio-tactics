@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isCrypto, isFutures, isForex, isIndex, isExchangeListed,
   isCnFund, isPvt, isDailyOnly, isUsEquity, hasOvernightSession,
-  isEuroExchange, isRegularSessionOnly, hasRecordedDaySession,
+  isEuroExchange, isRegularSessionOnly, venueSessionFor,
 } from './ticker_class.js';
 
 describe('ticker_class', () => {
@@ -138,11 +138,11 @@ describe('ticker_class', () => {
     expect(isRegularSessionOnly('')).toBe(false);
   });
 
-  it('hasRecordedDaySession — sparse-tape venue listings whose day is T212-recorded (MBG.F)', () => {
-    expect(hasRecordedDaySession('MBG.F')).toBe(true);
-    expect(hasRecordedDaySession('2dg.f')).toBe(true);   // case-insensitive
-    expect(hasRecordedDaySession('NVDA')).toBe(false);
-    expect(hasRecordedDaySession('IWDA.L')).toBe(false);
-    expect(hasRecordedDaySession('')).toBe(false);
+  it('venueSessionFor — the fixed 1D session frame for sparse-tape venue listings', () => {
+    expect(venueSessionFor('MBG.F')).toEqual({ tz: 'Europe/London', startMin: 420, endMin: 1260 });
+    expect(venueSessionFor('2dg.f')).toEqual({ tz: 'Europe/London', startMin: 420, endMin: 1260 });
+    expect(venueSessionFor('NVDA')).toBeNull();
+    expect(venueSessionFor('IWDA.L')).toBeNull();
+    expect(venueSessionFor('')).toBeNull();
   });
 });
