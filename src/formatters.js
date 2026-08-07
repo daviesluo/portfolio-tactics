@@ -116,3 +116,32 @@ export function formatAgo(ms) {
   const h = Math.floor(m / 60), rm = m % 60;
   return `${h}h ${String(rm).padStart(2, "0")}m`;
 }
+
+// ── Ticker display label ─────────────────────────────────────────────────
+// Display-only aliases for holdings whose Yahoo symbol is an opaque
+// foreign-listing code; the UI shows the company's home-market symbol
+// instead. Applied AFTER the suffix strip so every variant of the
+// listing (MBG / MBG.F / MBG.SG / MBG.DE) maps to one label.
+// MBG = Mercedes-Benz Group’s German listing; its home (Nasdaq
+// […]) symbol is SAND.
+const TICKER_DISPLAY_ALIASES = { 'MBG': 'SAND' };
+
+/**
+ * Label for a ticker in the compact surfaces — heatmap tiles, tactics-
+ * board chips, Top Movers rows. Strips the Yahoo exchange suffix
+ * (AIR.PA → AIR, VUKE.L → VUKE, 0700.HK → [•]) so tight rows aren't
+ * cluttered by ".PA" / ".L", then maps TICKER_DISPLAY_ALIASES.
+ *
+ * Display-only: the real symbol stays on the data everywhere it matters
+ * (React keys, click handlers, the chart modal's own header) so a tap
+ * still resolves the right instrument — the modal is deliberately the
+ * one place that shows the true Yahoo ticker.
+ *
+ * Only a trailing dot + 1–4 letters is stripped, so hyphenated symbols
+ * (BF-B, BTC-USD) and ^-prefixed indices survive intact, and bare CN
+ * fund codes (005827) have nothing to strip.
+ */
+export function displayTicker(ticker) {
+  const stripped = String(ticker || '').replace(/\.[A-Za-z]{1,4}$/, '');
+  return TICKER_DISPLAY_ALIASES[stripped] || stripped;
+}

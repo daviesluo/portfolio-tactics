@@ -38,3 +38,23 @@ describe('displayTicker', () => {
     expect(displayTicker('MBG.DE')).toBe('SAND');
   });
 });
+
+// displayTicker now lives in formatters.js because three surfaces label
+// tickers the same way — heatmap tiles, tactics-board chips and Top
+// Movers rows. The chart modal is deliberately the ONE place that keeps
+// showing the true Yahoo symbol, so a tap still resolves the right
+// instrument and the user can see which listing they actually hold.
+describe('displayTicker — shared across heatmap / pitch / top movers', () => {
+  it('maps every MBG listing variant to SAND, including .SG', () => {
+    expect(displayTicker('MBG.SG')).toBe('SAND'); // Stuttgart
+    expect(displayTicker('MBG.F')).toBe('SAND');  // Frankfurt
+    expect(displayTicker('MBG.DE')).toBe('SAND'); // XETRA
+    expect(displayTicker('MBG')).toBe('SAND');
+  });
+
+  it('is null/undefined-safe (chips render before data lands)', () => {
+    expect(displayTicker(/** @type {any} */ (undefined))).toBe('');
+    expect(displayTicker(/** @type {any} */ (null))).toBe('');
+    expect(displayTicker('')).toBe('');
+  });
+});
