@@ -109,14 +109,20 @@ const T212_TO_YAHOO: Record<string, string> = {
 // `T212_TO_YAHOO` above, which doubles as the shares/cost auto-sync
 // allow-list. Entries here feed `prices` (overnight quotes) ONLY; they
 // never sync shares/cost (the user manages those holdings manually).
-//   FB   → META   (Facebook renamed to Meta, 2022)
-//   YNDX → NBIS   (Yandex N.V. → Nebius Group, relisted 2024)
+//   FB   → META   (Facebook renamed to Meta, [•])
+//   YNDX → NBIS   (Yandex N.V. → Nebius Group, relisted [•])
 //   IBM → CVX (International Business Machines → Chevron Corporation, [•])
-//   VACQ → RKLB   (Vector Acquisition SPAC → Rocket Lab, 2021)
-//   LOKB → NVTS   (Live Oak Acq. II SPAC → Navitas, 2021)
+//   VACQ → RKLB   (Vector Acquisition SPAC → Rocket Lab, [•])
+//   LOKB → NVTS   (Live Oak Acq. II SPAC → Navitas, [•])
 //   GOOGL→ GOOG   (T212 lists Alphabet's class-A line; the board tracks
 //                  the class-C GOOG ticker — the two track within a
 //                  fraction of a % so it's a faithful overnight proxy)
+//
+// It also carries codes the generic suffix rules simply can't derive.
+//   MBGd_EQ → MBG.SG (a German listing: the `d` suffix has no rule, and
+//                      [•] fills netting to exactly the board's [•] shares
+//                      had no ticker at all, so the whole position's
+//                      history was invisible)
 const T212_US_ALIASES: Record<string, string> = {
   "FB_US_EQ": "META",
   "YNDX_US_EQ": "NBIS",
@@ -124,6 +130,7 @@ const T212_US_ALIASES: Record<string, string> = {
   "VACQ_US_EQ": "RKLB",
   "LOKB_US_EQ": "NVTS",
   "GOOGL_US_EQ": "GOOG",
+  "MBGd_EQ": "MBG.SG",
 };
 
 // Generic T212-internal → Yahoo ticker mapping, used to build the
@@ -140,8 +147,11 @@ export function t212TickerToYahoo(t212Ticker: string): string | null {
   if (typeof t212Ticker !== "string" || !t212Ticker) return null;
   if (T212_TO_YAHOO[t212Ticker]) return T212_TO_YAHOO[t212Ticker];
   if (T212_US_ALIASES[t212Ticker]) return T212_US_ALIASES[t212Ticker];
-  const us = t212Ticker.match(/^([A-Za-z]+)_US_EQ$/);
-  if (us) return us[1].toUpperCase();
+  // `BF_B_US_EQ` is Brown-Forman's […] line, and Yahoo spells a share
+  // class with a hyphen. Without the inner group the whole code failed to
+  // match and five fills went unmapped.
+  const us = t212Ticker.match(/^([A-Za-z]+(?:_[A-Za-z])?)_US_EQ$/);
+  if (us) return us[1].toUpperCase().replace("_", "-");
   const lse = t212Ticker.match(/^([A-Za-z]+)l_EQ$/);
   if (lse) return lse[1].toUpperCase() + ".L";
   return null;

@@ -116,6 +116,12 @@ Deno.test("t212TickerToYahoo — allow-list, generic US, generic LSE, unknown", 
   assertEquals(t212TickerToYahoo("TSCOl_EQ"), "TSCO.L");   // generic LSE
   assertEquals(t212TickerToYahoo("SOMEd_DE_EQ"), null);    // other exchange → null
   assertEquals(t212TickerToYahoo(""), null);
+  // A share class: T212 separates it with an underscore, Yahoo with a
+  // hyphen. Five Brown-Forman fills were unmapped for want of this.
+  assertEquals(t212TickerToYahoo("BF_B_US_EQ"), "BF-B");
+  // No rule can derive this one; 29 fills netting to the board's exact
+  // share count had no ticker until the alias table learned it.
+  assertEquals(t212TickerToYahoo("MBGd_EQ"), "MBG.SG");
 });
 
 Deno.test("t212TickerToYahoo — renamed / merged US tickers map to the CURRENT symbol", () => {
