@@ -122,6 +122,12 @@ Deno.test("t212TickerToYahoo — allow-list, generic US, generic LSE, unknown", 
   // No rule can derive this one; 29 fills netting to the board's exact
   // share count had no ticker until the alias table learned it.
   assertEquals(t212TickerToYahoo("MBGd_EQ"), "MBG.SG");
+  // Two more the suffix rules can't reach: a Paris listing, and an LSE
+  // ETF with no exchange letter at all.
+  assertEquals(t212TickerToYahoo("AIRp_EQ"), "AIR.PA");
+  assertEquals(t212TickerToYahoo("SGLN_EQ"), "SGLN.L");
+  // A ticker with a digit in it is still a ticker.
+  assertEquals(t212TickerToYahoo("IS15l_EQ"), "IS15.L");
 });
 
 Deno.test("t212TickerToYahoo — renamed / merged US tickers map to the CURRENT symbol", () => {
