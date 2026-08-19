@@ -172,6 +172,25 @@ describe('Sidebar — Top Movers ranks only real movers', () => {
     expect(screen.queryByText('005827')).not.toBeInTheDocument();
   });
 
+  it('never ranks a CN fund, even when its NAV moved', () => {
+    // The panel is TOP MOVERS - TODAY. A CN fund quotes a NAV published
+    // after its own close, so 005827's dayPct is a real number about a
+    // DIFFERENT day; ranking it beside stocks measured against today's
+    // tape compares two different things. Before this it was suppressed
+    // only during extended hours, so it ranked all day on a figure that
+    // was never today's market.
+    renderSidebar([
+      { ticker: 'NVDA',   dayPct: 5,   marketValue: 70 },
+      { ticker: 'KO', dayPct: -3,  marketValue: 50 },
+      { ticker: '005827', dayPct: 9.9, marketValue: 40 },
+      { ticker: 'MSFT',   dayPct: -1,  marketValue: 40 },
+    ]);
+    expect(screen.getByText('NVDA')).toBeInTheDocument();
+    expect(screen.getByText('KO')).toBeInTheDocument();
+    // A +9.9% NAV print would have topped WINNERS outright.
+    expect(screen.queryByText('005827')).not.toBeInTheDocument();
+  });
+
   it('renders a — placeholder for a column with no movers', () => {
     renderSidebar([
       { ticker: 'NVDA',   dayPct: 5, marketValue: 70 },
