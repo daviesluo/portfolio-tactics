@@ -1782,3 +1782,6 @@ body {
 
 .ag-empty { padding: 24px; text-align: center; }
 
+@keyframes ag-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+
