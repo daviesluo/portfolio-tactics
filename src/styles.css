@@ -1785,3 +1785,7 @@ body {
 @keyframes ag-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
 
 
+
+.modal:has(.ag-body), .modal:has(.ag-body) .modal-body, .ag-body { scrollbar-width: none; }
+.modal:has(.ag-body)::-webkit-scrollbar, .modal:has(.ag-body) .modal-body::-webkit-scrollbar, .ag-body::-webkit-scrollbar { display: none; }
+
