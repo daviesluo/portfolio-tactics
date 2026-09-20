@@ -1774,3 +1774,14 @@ body {
       #0f1815;
   }
 }
+
+
+.ag-body { padding-top: 16px; }
+
+@keyframes ag-pulse { 0%, 100% { box-shadow: 0 0 0 2px var(--gain-dim); } 50% { box-shadow: 0 0 0 5px transparent; } }
+
+.ag-empty { padding: 24px; text-align: center; }
+
+@keyframes ag-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+
+
