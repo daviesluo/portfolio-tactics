@@ -60,7 +60,7 @@ export const COMPANY_NAMES = {
   'CVX': 'Chevron Corporation',
   'VWRL.L': 'Vanguard FTSE All-World UCITS ETF',
   'IWDA.L': 'iShares Core MSCI World UCITS ETF (Acc)',
-  '005827': '易方达蓝筹精选混合',
+  '005827': 'E Fund Blue Chip Select Mixed',
 };
 
 /**
