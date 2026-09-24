@@ -1794,3 +1794,11 @@ body {
   .ag-body { padding-left: 12px; padding-right: 12px; }
 }
 
+
+
+@media (min-width: 761px) {
+  .modal.size-lg:has(.ag-body) { height: 85vh; }
+  .modal.size-lg:has(.ag-body) > .modal-body { flex: 1 1 auto; }
+}
+
+
