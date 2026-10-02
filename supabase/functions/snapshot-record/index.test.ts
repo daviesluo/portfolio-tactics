@@ -2,7 +2,8 @@
 // PRICES, so what has to be pinned is which price it picks and which
 // tickers it asks about — never a portfolio value, because it does not
 // compute one (see the file header for why that matters).
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertStrictEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import * as sharedTickers from "../_shared/t212_tickers.ts";
 import {
   bucketTimeIso,
   buildPriceRow,
@@ -12,6 +13,7 @@ import {
   isUsRegularSession,
   mergePriceMaps,
   recordablePrice,
+  recordsT212Price,
   t212TickerToYahoo,
   tickersToRecord,
 } from "./index.ts";
@@ -35,12 +37,46 @@ Deno.test("isUsRegularSession — inside, outside, weekend, holiday", () => {
   assertEquals(isUsRegularSession(new Date("2026-07-03T14:00:00Z")), false);
 });
 
-Deno.test("t212TickerToYahoo — LSE suffix, US suffix, renames, junk", () => {
-  assertEquals(t212TickerToYahoo("IWDAl_EQ"), "IWDA.L");
-  assertEquals(t212TickerToYahoo("KO_US_EQ"), "KO");
-  assertEquals(t212TickerToYahoo("YNDX_US_EQ"), "NBIS");
-  assertEquals(t212TickerToYahoo("nonsense"), null);
-  assertEquals(t212TickerToYahoo(""), null);
+// The map's own pins are `_shared/t212_tickers.test.ts`. Pinned here: this recorder reads that one map. The identity
+// fails if a copy of the function comes back, and the table-driven case the moment a copy of the tables drifts.
+Deno.test("t212TickerToYahoo — is the shared map's function, not a copy of it", () => {
+  assertStrictEquals(t212TickerToYahoo, sharedTickers.t212TickerToYahoo);
+});
+
+Deno.test("extractT212Prices — every code in the shared tables goes through the shared map, then the board's rule", () => {
+  const codes = Object.keys({ ...sharedTickers.T212_DCA_ETFS, ...sharedTickers.T212_ALIASES });
+  const positions = codes.map((ticker, i) => ({ instrument: { ticker }, currentPrice: 10 + i }));
+  const want: Record<string, number> = {};
+  codes.forEach((code, i) => {
+    const yahoo = sharedTickers.t212TickerToYahoo(code);
+    if (yahoo && recordsT212Price(yahoo)) want[yahoo] = 10 + i;
+  });
+  assertEquals(extractT212Prices(positions), want);
+  assertEquals(Object.keys(want).sort(), ["CVX", "GOOG", "IWDA.L", "META", "NBIS", "NVTS", "RKLB", "VWRL.L"]);
+});
+
+Deno.test("recordsT212Price — a US listing, a share class and the two ETFs the board prices from the broker; nothing else", () => {
+  for (const ticker of ["KO", "BF-B", "IWDA.L", "VWRL.L"]) assertEquals(recordsT212Price(ticker), true, ticker);
+  for (const ticker of ["MBG.SG", "IS15.L", "SGLN.L", "AIR.PA", "ABC.L"]) assertEquals(recordsT212Price(ticker), false, ticker);
+});
+
+Deno.test("buildPriceRow — the broker's price only where the board shows it, Yahoo's elsewhere, nothing from Yahoo overnight", () => {
+  // Every position at 10 from the broker and 20 from Yahoo, so each recorded number names its source.
+  const t212 = extractT212Prices(
+    ["MBGd_EQ", "IWDAl_EQ", "KO_US_EQ", "BF_B_US_EQ", "IS15l_EQ", "SGLN_EQ", "AIRp_EQ"]
+      .map((ticker) => ({ instrument: { ticker }, currentPrice: 10 })),
+  );
+  const tickers = ["AIR.PA", "BF-B", "IS15.L", "IWDA.L", "KO", "MBG.SG", "SGLN.L"];
+  const yahoo = Object.fromEntries(tickers.map((ticker) => [ticker, { lastPrice: 20 }]));
+  const byDay = { "MBG.SG": 20, "KO": 10, "BF-B": 10, "SGLN.L": 20, "IS15.L": 20, "IWDA.L": 10, "AIR.PA": 20 };
+  assertEquals(buildPriceRow(tickers, yahoo, t212, new Date("2026-10-01T09:00:00Z")), byDay); // 05:00 EDT
+  assertEquals(buildPriceRow(tickers, yahoo, t212, new Date("2026-10-01T14:00:00Z")), byDay); // 10:00 EDT, the US session
+  // In the US overnight session only the broker's quote is recorded, so MBG.SG and the other Yahoo-priced listings
+  // are absent, and the chart keeps to Yahoo's own bars for them, as the board does.
+  assertEquals(
+    buildPriceRow(tickers, yahoo, t212, new Date("2026-10-02T02:00:00Z")), // Thursday 22:00 EDT
+    { "KO": 10, "BF-B": 10, "IWDA.L": 10 },
+  );
 });
 
 Deno.test("extractT212Prices — flat and nested shapes, bad rows dropped", () => {
