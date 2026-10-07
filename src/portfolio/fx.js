@@ -20,6 +20,11 @@ import { isEuroExchange } from '../prices/ticker_class.js';
 const TICKER_CURRENCY_OVERRIDES = /** @type {const} */ ({
   'IWDA.L': 'USD',
   'VWRL.L': 'USD',
+  // iShares Physical Gold and iShares £ Corp Bond 0-5yr trade in dollars on
+  // the LSE (Yahoo's currency for both, 2026-10-07): Trading 212 fills them
+  // in USD, so their gains are USD, not GBP.
+  'SGLN.L': 'USD',
+  'IS15.L': 'USD',
 });
 
 /**
