@@ -113,12 +113,11 @@ describe('what each row did to the position', () => {
     const matrix = transactionRowsToMatrix(buildTransactionLog(LEDGER));
     const buy = matrix.find((r) => r[1] === '2026-02-01');
     expect(buy?.[6]).toBe('$120.00');
-    // A sale changes the average cost too — the cash it returns comes
-    // off the basis of what's left — so this column reads for both.
-    // [•] of net cash behind [•] shares; the sale returns [•] and
-    // takes [•] away, leaving [•] over [•] = [•].
+    // A sale shows the average cost it was measured against ([•]-[•]-[•]),
+    // so its row checks by hand: [•] over [•] shares = [•] and
+    // [•] × ([•] − [•]) = [•] its Realised G/L.
     const sale = matrix.find((r) => r[0] === 'SELL');
-    expect(sale?.[6]).toBe('$93.33');
+    expect(sale?.[6]).toBe('$120.00');
   });
 
   it('puts the realized gain last, and leaves it blank on a purchase', () => {
