@@ -37,6 +37,15 @@ describe('TransactionHistoryModal', () => {
     expect(screen.getByText('+$220.00')).toBeInTheDocument();
   });
 
+  it('waits with a dash while the fills or the dividends it is counted from are unread, then headlines the total', () => {
+    // A reload with every answer still out ([•]-[•]-[•]): no fill read, so no closed position, and no dividend read.
+    // Counted then, the headline read +$[•] (NVDA's sale alone) and jumped to +$[•] when the fills landed.
+    const { rerender } = render(<TransactionHistoryModal holdings={HOLDINGS} marketData={MARKET} hideValues={false} realizedPending onClose={vi.fn()} />);
+    expect(document.querySelector('.txn-realized-val')?.textContent).toBe('—');
+    rerender(<TransactionHistoryModal holdings={HOLDINGS} marketData={MARKET} hideValues={false} realizedPending={false} onClose={vi.fn()} />);
+    expect(document.querySelector('.txn-realized-val')?.textContent).toBe('+$220.00');
+  });
+
   it('lists every buy + sell newest-first, with BUY/SELL badges and the closed holding', () => {
     render(<TransactionHistoryModal holdings={HOLDINGS} marketData={MARKET} hideValues={false} onClose={vi.fn()} />);
     const bodyRows = screen.getAllByRole('row').slice(1); // drop the header row
