@@ -86,7 +86,7 @@ Deno.test("extractOvernightPrices: every code in the shared tables goes through 
     if (yahoo && hasOvernightSession(yahoo)) want[yahoo] = 10 + i;
   });
   assertEquals(extractOvernightPrices(positions), want);
-  assertEquals(Object.keys(want).sort(), ["CVX", "GOOG", "META", "NBIS", "NVTS", "RKLB"]);
+  assertEquals(Object.keys(want).sort(), ["CVX", "META", "NBIS", "NVTS", "RKLB"]);
 });
 
 Deno.test("extractOvernightPrices: a share class is a US equity with an overnight tape (this recorder's old copy dropped it)", () => {
@@ -112,12 +112,13 @@ Deno.test("extractOvernightPrices: maps eligible US equities, drops the rest", (
     { ticker: "NSRGY_US_EQ", currentPrice: 22.8 },     // excluded (NO_OVERNIGHT)
     { ticker: "IWDAl_EQ", currentPrice: 98 },           // excluded (.L)
     { ticker: "KO_US_EQ", currentPrice: 0 },          // dropped (non-positive) — but first KO already set
-    { ticker: "GOOGL_US_EQ", currentPrice: 250 },       // alias → GOOG
+    { ticker: "GOOGL_US_EQ", currentPrice: 250 },       // class A, its own ticker (the GOOG alias went 2026-10-21)
   ];
   const out = extractOvernightPrices(positions);
   assertEquals(out.KO, 200);
   assertEquals(out.NVDA, 175.5);
-  assertEquals(out.GOOG, 250);
+  assertEquals(out.GOOGL, 250);
+  assertEquals("GOOG" in out, false);
   assertEquals("NSRGY" in out, false);
   assertEquals("IWDA.L" in out, false);
 });

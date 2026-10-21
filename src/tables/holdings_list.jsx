@@ -22,7 +22,7 @@ export const COMPANY_NAMES = {
   'ABT': 'Abbott Laboratories',
   'APLD': 'Applied Digital Corporation',
   'NBIS': 'Nebius Group',
-  'GOOG': 'Alphabet Inc.',
+  'GOOGL': 'Alphabet Inc. (Class A)',
   'SPAX.PVT': 'SpaceX',
   'SYK': 'Stryker Corporation',
   'META': 'Meta Platforms, Inc.',

@@ -55,7 +55,7 @@ Deno.test("extractT212Prices — every code in the shared tables goes through th
     if (yahoo && recordsT212Price(yahoo)) want[yahoo] = 10 + i;
   });
   assertEquals(extractT212Prices(positions), want);
-  assertEquals(Object.keys(want).sort(), ["CVX", "GOOG", "IWDA.L", "META", "NBIS", "NVTS", "RKLB", "VWRL.L"]);
+  assertEquals(Object.keys(want).sort(), ["CVX", "IWDA.L", "META", "NBIS", "NVTS", "RKLB", "VWRL.L"]);
 });
 
 Deno.test("recordsT212Price — a US listing, a share class and the two ETFs the board prices from the broker; nothing else", () => {

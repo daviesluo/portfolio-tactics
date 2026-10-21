@@ -9,7 +9,7 @@ const row = { low: null, price: null, lowVsPrice: null };
 describe('Key risks', () => {
   it('holds every holding on the board of 2026-10-21, by the ticker the page shows, 1 to 3 items each', () => {
     // The board's 30 holdings (read-only SQL on board_data, 2026-10-21), through displayTicker.
-    const BOARD = ['AMZN', 'APLD', 'BE', 'BMNR', 'BTC-USD', 'GOOG', 'HOOD', 'META', 'MSFT', 'MSTR',
+    const BOARD = ['AMZN', 'APLD', 'BE', 'BMNR', 'BTC-USD', 'GOOGL', 'HOOD', 'META', 'MSFT', 'MSTR',
       'MU', 'NBIS', 'NVDA', 'NVTS', 'PLTR', 'RKLB', 'SPCX', 'TSM'];
     expect(Object.keys(TARGET_RISKS).sort()).toEqual([...BOARD].sort());
     for (const k of BOARD) {

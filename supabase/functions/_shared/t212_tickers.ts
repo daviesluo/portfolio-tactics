@@ -31,7 +31,6 @@ export const T212_ALIASES: Readonly<Record<string, string>> = Object.freeze({
   "IBM_US_EQ": "CVX", // IBM, renamed Chevron in [•]
   "VACQ_US_EQ": "RKLB", // Vector Acquisition, the SPAC that became Rocket Lab in 2021
   "LOKB_US_EQ": "NVTS", // Live Oak Acquisition II, the SPAC that became Navitas in 2021
-  "GOOGL_US_EQ": "GOOG", // Alphabet's class A line; the board tracks class C, which moves within a fraction of it
   "MBGd_EQ": "MBG.SG", // Mercedes-Benz on a German venue: the `d` letter has no rule
   "AIRp_EQ": "AIR.PA", // Airbus on Euronext Paris: nor has `p`
   "SGLN_EQ": "SGLN.L", // an LSE […] ETF whose code carries no exchange letter at all
