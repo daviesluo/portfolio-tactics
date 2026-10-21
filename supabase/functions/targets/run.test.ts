@@ -64,6 +64,7 @@ Deno.test("a due slot: every holding's snapshot written under it, the slot done,
   const vwrl = rows.find((x) => x.ticker === "VWRL.L")!.payload;
   assertEquals([vwrl.mean, vwrl.low, vwrl.high, vwrl.coverage.names], [12, 10, 14, 1]);
   assertEquals(calls.filter((u) => u.includes("005930")).length, 2);
+  assertEquals(vwrl.coverage.skipped, []);
   // Bitcoin and the CN fund ask Yahoo nothing; no Alpha Vantage key, no Alpha Vantage call.
   assertEquals(calls.some((u) => u.includes("BTC-USD") || u.includes("005827") || u.includes("alphavantage")), false);
   const st = (await db.select<Row>(TARGETS_STATE, "id=eq.1&select=*"))[0];
