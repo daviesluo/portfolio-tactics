@@ -1,7 +1,7 @@
 // The hand-kept tables, read live from the `hand-targets` branch (Davies, 2026-10-21: the site shows Grok's updates as
 // soon as they are pushed, with no redeploy).
 //
-// An outside agent (Grok) refreshes two files on branch `hand-targets` of this (public) repository every day at 09:30
+// An outside agent (Grok) refreshes two files on branch `hand-targets` of this repository every day at 09:30
 // New York time: HAND_TARGETS.json (bitcoin's bank targets, `btc.rows`, and the S&P 500 strategists' year-end targets,
 // `sp500.rows`, which IWDA is priced from) and HAND_RISKS.json (the Target price page's Key risks). The `targets`
 // function's one-minute call checks the branch head every HAND_CHECK_MS; when it moved, it reads both files AT THAT
@@ -11,8 +11,12 @@
 // is reported once, when it starts, not every minute. The main session still copies the branch into the code each day,
 // so the baked copies stay current.
 //
-// Reads only: the head through GitHub's API (unauthenticated, 60 an hour per IP, so once per HAND_CHECK_MS) or, when the
-// API refuses, git's own ref advertisement; the files from raw.githubusercontent.com. No token, no write anywhere.
+// Reads only: the head through GitHub's API or, when the API refuses, git's own ref advertisement; the files at that
+// commit. Since the repository went private (2026-11-05) each read carries GITHUB_READ_TOKEN (`_shared/github_read.ts`:
+// read-only, this repository alone; 5,000 calls an hour); unset, they are the anonymous reads of the public days (60 an
+// hour per IP, so once per HAND_CHECK_MS) and fail with 404 once it is private. No write anywhere.
+
+import { githubApiHeaders, githubReadToken, gitBasicAuth, repoFileRequest } from "../_shared/github_read.ts";
 
 export const HAND_REPO = "daviesluo/daviesportfolios";
 export const HAND_BRANCH = "hand-targets";
@@ -134,10 +138,10 @@ export function headFromRefAdvertisement(body: string, branch: string): string |
 }
 
 /** The branch head: GitHub's API first, then git's ref advertisement (not rate-limited the same way). Null on both failing. */
-export async function resolveHead(f: typeof fetch): Promise<{ sha: string; via: "api" | "git" } | null> {
+export async function resolveHead(f: typeof fetch, token: string | null = githubReadToken()): Promise<{ sha: string; via: "api" | "git" } | null> {
   try {
     const res = await f(`https://api.github.com/repos/${HAND_REPO}/commits/${HAND_BRANCH}`, {
-      headers: { Accept: "application/vnd.github.sha", "User-Agent": UA }, signal: AbortSignal.timeout(TIMEOUT_MS),
+      headers: githubApiHeaders(token, "application/vnd.github.sha", UA), signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.ok) {
       const sha = (await res.text()).trim();
@@ -146,7 +150,8 @@ export async function resolveHead(f: typeof fetch): Promise<{ sha: string; via: 
   } catch { /* the advertisement next */ }
   try {
     const res = await f(`https://github.com/${HAND_REPO}.git/info/refs?service=git-upload-pack`, {
-      headers: { "User-Agent": "git/2.40.0" }, signal: AbortSignal.timeout(TIMEOUT_MS),
+      headers: token ? { "User-Agent": "git/2.40.0", Authorization: gitBasicAuth(token) } : { "User-Agent": "git/2.40.0" },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (res.ok) {
       const sha = headFromRefAdvertisement(await res.text(), HAND_BRANCH);
@@ -157,10 +162,9 @@ export async function resolveHead(f: typeof fetch): Promise<{ sha: string; via: 
 }
 
 /** One file of the branch, at a commit when one is known (immutable), else at the branch's name. */
-export async function fetchHandFile(name: string, ref: string, f: typeof fetch): Promise<unknown> {
-  const res = await f(`https://raw.githubusercontent.com/${HAND_REPO}/${ref}/${name}`, {
-    headers: { "User-Agent": UA, Accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
+export async function fetchHandFile(name: string, ref: string, f: typeof fetch, token: string | null = githubReadToken()): Promise<unknown> {
+  const req = repoFileRequest(HAND_REPO, ref, name, token, UA);
+  const res = await f(req.url, { headers: token ? req.headers : { ...req.headers, Accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!res.ok) { await res.body?.cancel(); throw new Error(`${name}: ${res.status}`); }
   return await res.json();
 }
@@ -176,7 +180,8 @@ export async function checkHand(prev: HandState | null | undefined, nowMs: numbe
   Promise<{ state: HandState; changed: boolean; newError: string | null }> {
   const p: HandState = prev && typeof prev === "object" ? { ...EMPTY_HAND, ...prev } : { ...EMPTY_HAND };
   if (nowMs - p.checkedAt < HAND_CHECK_MS) return { state: p, changed: false, newError: null };
-  const head = await resolveHead(f);
+  const token = githubReadToken();
+  const head = await resolveHead(f, token);
   // The same commit already loaded and valid: nothing to read.
   if (head && head.sha === p.sha && p.targets && p.risks && !p.error) return { state: { ...p, checkedAt: nowMs, via: head.via }, changed: false, newError: null };
   const fail = (error: string) => {
@@ -186,7 +191,7 @@ export async function checkHand(prev: HandState | null | undefined, nowMs: numbe
   const ref = head?.sha ?? HAND_BRANCH;
   let targetsRaw: unknown, risksRaw: unknown;
   try {
-    [targetsRaw, risksRaw] = await Promise.all([fetchHandFile("HAND_TARGETS.json", ref, f), fetchHandFile("HAND_RISKS.json", ref, f)]);
+    [targetsRaw, risksRaw] = await Promise.all([fetchHandFile("HAND_TARGETS.json", ref, f, token), fetchHandFile("HAND_RISKS.json", ref, f, token)]);
   } catch (e) {
     return fail(`hand-targets: could not read the branch (${e instanceof Error ? e.message : String(e)})`);
   }

@@ -4,7 +4,7 @@
 // GET serving the risks when the branch moves.
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { memDb } from "../agents/testing.ts";
-import { checkHand, EMPTY_HAND, HAND_CHECK_MS, headFromRefAdvertisement, validateHandRisks, validateHandTargets } from "./hand.ts";
+import { checkHand, EMPTY_HAND, fetchHandFile, HAND_CHECK_MS, headFromRefAdvertisement, resolveHead, validateHandRisks, validateHandTargets } from "./hand.ts";
 import { handTables, readTargets, runTargets, TARGETS_STATE, TARGETS_TABLE } from "./run.ts";
 import { INDEX_TARGETS, STRATEGIST_TARGETS } from "./strategists.ts";
 
@@ -187,4 +187,29 @@ Deno.test("the job: a push rebuilds bitcoin's and IWDA's rows between slots, and
   // Baked tables untouched by any of this.
   assertEquals(INDEX_TARGETS["IWDA.L"].rows.length, 19);
   assertEquals(EMPTY_HAND.sha, null);
+});
+
+Deno.test("hand-targets on a private repository: every read carries the read token, and none works without it", async () => {
+  // GitHub as a private repository answers: 404 to anything without the token, the head and the files to the token.
+  const calls: Array<[string, string | null]> = [];
+  const f = ((input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input), auth = new Headers(init?.headers).get("Authorization");
+    calls.push([url, auth]);
+    if (auth !== "Bearer tok" && auth !== `Basic ${btoa("x-access-token:tok")}`) return Promise.resolve(new Response("Not Found", { status: 404 }));
+    if (url === "https://api.github.com/repos/daviesluo/daviesportfolios/commits/hand-targets") return Promise.resolve(new Response(SHA1));
+    if (url.includes("/info/refs")) return Promise.resolve(new Response(`003f${SHA1} refs/heads/hand-targets\n0000`));
+    const m = url.match(/^https:\/\/api\.github\.com\/repos\/daviesluo\/daviesportfolios\/contents\/(HAND_\w+)\.json\?ref=(\w+)$/);
+    if (m && m[2] === SHA1 && new Headers(init?.headers).get("Accept") === "application/vnd.github.raw") return Promise.resolve(new Response(JSON.stringify({ file: m[1] })));
+    return Promise.resolve(new Response("Not Found", { status: 404 }));
+  }) as typeof fetch;
+  assertEquals(await resolveHead(f, "tok"), { sha: SHA1, via: "api" });
+  assertEquals(await fetchHandFile("HAND_TARGETS.json", SHA1, f, "tok"), { file: "HAND_TARGETS" });
+  // The anonymous reads of the public days get nothing (the counterfactual: what production did before the token).
+  assertEquals(await resolveHead(f, null), null);
+  let threw = "";
+  await fetchHandFile("HAND_TARGETS.json", SHA1, f, null).catch((e) => { threw = String(e); });
+  assert(threw.includes("404"), threw);
+  // When the API refuses even the token, git's ref advertisement is asked with it as the password.
+  const noApi = ((input: string | URL | Request, init?: RequestInit) => String(input).startsWith("https://api.github.com/") ? Promise.resolve(new Response("", { status: 403 })) : f(input, init)) as typeof fetch;
+  assertEquals(await resolveHead(noApi, "tok"), { sha: SHA1, via: "git" });
 });
