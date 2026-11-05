@@ -429,16 +429,15 @@ export function applyTrading212(holdings, t212Holdings, prices, today, orders) {
     // A board position LARGER than the broker's is another platform's
     // shares, and they are never taken away.
     //
-    // This book holds SPCX, RKLB and HOOD at Trading 212 *and*
-    // elsewhere: [•] / [•] / [•] on the board against [•] / [•] / [•] at
-    // the broker. Taking the broker as the whole position on a ticker's
-    // first sync — which this briefly did — deleted [•] [•] and [•]
-    // shares respectively. The excess is not stale data to be corrected;
+    // This book holds some tickers at Trading 212 *and* elsewhere, so the
+    // board's count of each is larger than the broker's. Taking the broker
+    // as the whole position on a ticker's first sync — which this briefly
+    // did — deleted the shares held elsewhere. The excess is not stale data to be corrected;
     // it is the rest of the position.
     //
     // Nothing is lost by being conservative here. A holding the board
     // records as sold out (PLTR at [•] against a slice held at the broker) still comes back
-    // in full, because `max([•] [•] - [•])` is [•] and the broker's slice is
+    // in full, because `max([•] [•] - held)` is [•] and the broker's slice is
     // the whole of it. From the second sync onward only the tagged
     // slice's DELTA moves, so the other platform's shares ride along
     // untouched forever after.
