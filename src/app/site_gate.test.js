@@ -163,6 +163,18 @@ describe('the site gate: a signed-in session', () => {
     await store();
     expect(calls).toBe(3);                       // past the hour: read again
   });
+
+  it('a cold store answers every request that arrives while its first read is out with that read\'s key (no 503s)', async () => {
+    let calls = 0, release = () => {};
+    const jwk = await crypto.subtle.exportKey('jwk', pub);
+    const gate = new Promise((r) => { release = () => r(undefined); });
+    const store = keyStore(CONFIG, { fetch: async () => { calls++; await gate; return new Response(JSON.stringify({ keys: [{ kty: 'OKP', crv: 'Ed25519', x: jwk.x }] })); }, now: () => NOW });
+    // A page's dozen file requests at once on a fresh isolate: before the fix the 2nd..12th got [] and the gate 503.
+    const all = Array.from({ length: 12 }, () => store());
+    release();
+    expect((await Promise.all(all)).map((k) => k.length)).toEqual(Array(12).fill(1));
+    expect(calls).toBe(1);
+  });
 });
 
 describe('the site gate: /__session', () => {
