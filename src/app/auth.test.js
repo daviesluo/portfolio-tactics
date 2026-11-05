@@ -134,6 +134,28 @@ describe('authenticate', () => {
     expect(getAppToken()).toBe('abc');
   });
 
+  // The site's gate (site_gate.js; Davies, 2026-11-05: "任何人不登录应该任何东西都下载不了才行").
+  it("hands the gate its session when the gate served the page, and asks nothing of one that is not there", async () => {
+    const { authenticate } = await import('./auth.js');
+    const calls = /** @type {string[]} */ ([]);
+    const stub = () => vi.stubGlobal('fetch', vi.fn(async (/** @type {string} */ u, /** @type {RequestInit} */ o) => {
+      calls.push(`${o?.method ?? 'GET'} ${u}${u === '/__session' && o?.body ? ` ${o.body}` : ''}`);
+      return u === '/__session' ? new Response(null, { status: 204 }) : new Response(JSON.stringify({ token: 'abc', role: 'admin', site: 'p.s' }), { status: 200 });
+    }));
+    stub();
+    expect(await authenticate('pw')).toEqual({ isReadOnly: false, agents: true });
+    expect(calls).toEqual([expect.stringMatching(/^POST https:\/\/.*\/functions\/v1\/auth$/)]);
+    calls.length = 0;
+    vi.stubGlobal('document', { querySelector: (/** @type {string} */ s) => (s === 'meta[name="dp-site-gate"]' ? {} : null) });
+    stub();
+    await authenticate('pw');
+    expect(calls.slice(1)).toEqual(['POST /__session p.s']);
+    calls.length = 0;
+    signOut();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toEqual(['DELETE /__session']);
+  });
+
   it('a 401 is a wrong password (null), and a 429 is a lockout with its end', async () => {
     const { authenticate } = await import('./auth.js');
     answer(401, { error: 'invalid', attemptsLeft: 2 });

@@ -82,7 +82,8 @@ the sidebar with performance, market conditions and upcoming earnings.
 - **Trading 212 sync** of positions and every fill, without touching
   shares of the same ticker held at another broker.
 - **Two passwords**: one that can edit and a read-only one for sharing,
-  both checked on the server.
+  both checked on the server. Until you sign in, the site sends nothing
+  but its sign-in page.
 - **Installs as an app** on iOS and Android, works offline, and tells you
   when a new version is out.
 
