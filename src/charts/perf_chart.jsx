@@ -1267,8 +1267,8 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
   const xOfSp   = (date) => padL + ((spIdxOf.get(date)   ?? 0) / Math.max(1, totalLen - 1)) * cW;
 
   // Y range. The percentage view always includes [•] — zero IS the
-  // comparison there. The dollar view must NOT: a $[•] book against a
-  // $[•] deposit line would spend [•] % of the chart's height getting
+  // comparison there. The dollar view must NOT: a book worth a fifth more
+  // than its deposit line would spend most of the chart's height getting
   // down to $[•] and flatten both lines into the top edge.
   const allVals = isInv
     ? [...lineA.map(p => p.v), ...lineB.map(p => p.v)]

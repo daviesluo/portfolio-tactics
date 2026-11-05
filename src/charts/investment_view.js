@@ -24,7 +24,7 @@ export function niceStep(raw) {
  *
  * Deliberately does NOT force zero onto the axis. The percentage chart
  * wants a zero line because zero is the comparison; a dollar chart of a
- * $[•] book with a $[•] deposit line would waste [•] % of its height
+ * book a fifth above its deposit line would waste most of its height
  * getting down to $[•] and flatten both lines into the top edge.
  *
  * @param {number} min

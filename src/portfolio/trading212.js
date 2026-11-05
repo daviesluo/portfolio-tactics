@@ -437,7 +437,7 @@ export function applyTrading212(holdings, t212Holdings, prices, today, orders) {
     // it is the rest of the position.
     //
     // Nothing is lost by being conservative here. A holding the board
-    // records as sold out (PLTR at [•] against [•] held) still comes back
+    // records as sold out (PLTR at [•] against a slice held at the broker) still comes back
     // in full, because `max([•] [•] - [•])` is [•] and the broker's slice is
     // the whole of it. From the second sync onward only the tagged
     // slice's DELTA moves, so the other platform's shares ride along

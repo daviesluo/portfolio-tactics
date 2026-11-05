@@ -8,9 +8,9 @@
 // than Trading 212 it is the only record there is.
 //
 // The broker's copy wins wherever it exists. It is not a matter of
-// taste: the board carried ONE lot of `[•] @ [•]` for SPCX, which is
-// T212's average price and not a trade that ever happened — the twelve
-// real fills ran from [•] down to [•] over a month. Reconciling
+// taste: the board carried ONE lot for SPCX at T212's average price,
+// which is not a trade that ever happened — the dozen real fills ran
+// down by about a third over a month. Reconciling
 // row against row can't fix that, because the rows don't correspond.
 // Replacing does.
 //

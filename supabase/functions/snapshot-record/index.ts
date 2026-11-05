@@ -1,7 +1,7 @@
 // Supabase Edge Function: snapshot-record
 //
-// Cron-triggered every [•] min, [•]/[•] (migration [•] schedules it, [•]
-// owns the table it writes). One row per [•]-minute bucket into
+// Cron-triggered every 5 min, 24/7 (migration 0026 schedules it, 0029
+// owns the table it writes). One row per 5-minute bucket into
 // `public.price_snapshots`: `{ ticker → native-currency price }` for
 // every ticker on the board.
 //
@@ -12,12 +12,12 @@
 // previous version of this file computed a USD value and a net-deposit
 // figure server-side, which meant a full second implementation of the
 // ledger maths living beside the browser's — and the two disagreed in
-// production, writing a `deposit_usd` that moved between [•], [•], [•]
-// and [•] in two days without a penny changing hands. Recording the
+// production, writing a `deposit_usd` that moved by nearly half and
+// back in two days without a penny changing hands. Recording the
 // prices instead makes that class of bug unreachable rather than
 // carefully avoided.
 //
-// Why server-side at all: Yahoo will not sell [•]-minute bars going back a
+// Why server-side at all: Yahoo will not sell 5-minute bars going back a
 // month, has none at all for a CN fund or a `.PVT` holding, and stops
 // entirely overnight for most listings. The book still moves when nobody
 // is looking — T212 overnight, crypto, FX — and the original client-side
@@ -28,14 +28,14 @@
 //
 // Auth: caller MUST present `Authorization: Bearer <CRON_SECRET>`.
 // Deploy with `--no-verify-jwt` (PUBLIC_FNS in edge-functions.yml) —
-// CRON_SECRET is not a Supabase JWT, so the platform gate would [•] the
+// CRON_SECRET is not a Supabase JWT, so the platform gate would 401 the
 // cron call before this check ran.
 //
-// Once a day, at its [•]:[•] UTC call, it also audits the overnight recorder's
-// last [•] hours and reports a shortfall to ops_errors
+// Once a day, at its 10:00 UTC call, it also audits the overnight recorder's
+// last 24 hours and reports a shortfall to ops_errors
 // (`_shared/recorder_watch.ts`; the overnight recorder audits this one).
 //
-// Each call writes its beat first (`_shared/beats.ts`, [•]): a call whose
+// Each call writes its beat first (`_shared/beats.ts`, 0075): a call whose
 // worker the platform never started has none, and the watchdog runs it
 // again within its minute. A second run in a bucket writes the same row:
 // its prices, read moments later in the same five minutes, replace the
@@ -43,10 +43,10 @@
 // bucket, as it does from any bucket that run alone writes).
 //
 // Returns:
-//   [•] { ok: true, bucketTime, tickers }
-//   [•] { ok: true, skipped: "no-board" | "no-tickers" | "no-prices" }
-//   [•] — bad auth
-//   [•] — DB write failed
+//   200 { ok: true, bucketTime, tickers }
+//   200 { ok: true, skipped: "no-board" | "no-tickers" | "no-prices" }
+//   403 — bad auth
+//   500 — DB write failed
 
 import { isUsMarketHolidayAt, usRegularCloseMinAt } from "../_shared/us_market_calendar.ts";
 import { b64url, sign } from "../_shared/token.ts";

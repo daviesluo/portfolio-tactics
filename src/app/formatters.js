@@ -9,7 +9,7 @@ import { isCrypto } from '../prices/ticker_class.js';
 /**
  * Replaces each digit in a formatted string with a centred bullet so
  * the masked text stays vertically aligned with neighbouring real
- * numbers ("$[•]" → "$•••,•••.••"). Bullet is preferred over
+ * numbers ("$[•]" → "$••,•••.••"). Bullet is preferred over
  * asterisk because `*` sits high in the x-height of our mono font and
  * makes masked rows look elevated.
  * @param {any} s
