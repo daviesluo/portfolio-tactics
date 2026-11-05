@@ -4,7 +4,7 @@
   "compatibility_date": "2026-04-22",
   // The published artefact. WITHOUT this key Cloudflare Pages falls back
   // to its default output directory — the repository root — and publishes
-  // the entire repo, which is how `handover.md`, `LEDGER.md`, all of
+  // the entire repo, which is how the repository's notes, all of
   // `src/` and every Edge Function source came to return 200 to an
   // unauthenticated fetch.
   //

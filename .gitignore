@@ -23,7 +23,7 @@ __pycache__/
 # Pages can deploy without a build step in the dashboard, and
 # `wrangler.jsonc`'s `pages_build_output_dir` makes `dist/` the ONLY
 # directory it publishes — which is what stops the live site serving
-# handover.md, LEDGER.md and every Edge Function source. If we ever
+# the repository's notes and every Edge Function source. If we ever
 # migrate to CF-managed builds, ignore the output here AND keep
 # `pages_build_output_dir`: the second is what scopes the deploy.
 

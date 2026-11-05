@@ -19,7 +19,7 @@ const APP_VERSION = buildStamp(fileURLToPath(new URL('.', import.meta.url)));
 // else — `wrangler.jsonc`'s `pages_build_output_dir`.
 //
 // It used to emit to the REPO ROOT, which is why the live site served
-// `handover.md`, `LEDGER.md`, all of `src/` and every Edge Function
+// the repository's notes, all of `src/` and every Edge Function
 // source to anyone who asked: with no output directory configured
 // anywhere, the Pages default is the repository root, and the whole
 // repo was the published artefact. Two earlier fixes failed because
