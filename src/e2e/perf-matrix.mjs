@@ -37,7 +37,7 @@
 // — before the open, in the session, after the close, a weekend — with
 // extended hours off and on, on both tabs.
 //
-// A hard CI gate since [•]-[•]-[•] (check.yml's matrix step). Its clock is
+// A hard gate since [•]-[•]-[•] (bin/gates.sh's; on GitHub too until CI-TRIM, [•]-[•]-[•]). Its clock is
 // pinned below, so it gives the same answer at any hour, and it refuses an
 // instant its fixture cannot serve. Run it from src/ after a chart change:
 //
