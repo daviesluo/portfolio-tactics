@@ -16,6 +16,10 @@ import {
   VIEWER_TOKEN_TTL_MS,
   viewerToken,
   checkToken,
+  makeSiteToken,
+  siteKeyPair,
+  siteKeyResponse,
+  tokensFor,
   viewerTokenResponse,
 } from "./index.ts";
 import { verifyToken } from "../data/index.ts";
@@ -146,7 +150,7 @@ Deno.test("viewerToken: a read-only token of 30 minutes that the verifying funct
   const t0 = Date.now();
   const out = await viewerToken(`Bearer ${VT_ENV.cronSecret}`, VT_ENV);
   assertEquals(out.status, 200);
-  assertEquals(Object.keys(out.body).sort(), ["exp", "role", "token"]);
+  assertEquals(Object.keys(out.body).sort(), ["exp", "role", "site", "token"]);
   assertEquals(out.body.role, "ro");
   const v = await verifyToken(out.body.token as string, VT_ENV.secret);
   assertEquals(v?.role, "ro");
@@ -205,7 +209,7 @@ Deno.test("checkToken: only the cron bearer gets one; a missing, wrong or empty 
 Deno.test("checkToken: a token of role check, 30 minutes, that the verifying functions accept; no password is read or returned", async () => {
   const out = await checkToken(`Bearer ${VT_ENV.cronSecret}`, { cronSecret: VT_ENV.cronSecret, secret: VT_ENV.secret });
   assertEquals(out.status, 200);
-  assertEquals(Object.keys(out.body).sort(), ["exp", "role", "token"]);
+  assertEquals(Object.keys(out.body).sort(), ["exp", "role", "site", "token"]);
   const v = await verifyToken(out.body.token as string, VT_ENV.secret);
   assertEquals([v?.role, v?.exp], ["check", out.body.exp]);
   assert((out.body.exp as number) <= Date.now() + VIEWER_TOKEN_TTL_MS);
@@ -221,4 +225,45 @@ Deno.test("check-token route: answered beside viewer-token, never cached, a refu
   const ok = await viewerTokenResponse(new Request("https://x/auth?action=check-token", { method: "POST", headers: { authorization: `Bearer ${VT_ENV.cronSecret}` } }), VT_ENV);
   assertEquals([ok?.status, ok?.headers.get("cache-control")], [200, "no-store"]);
   assertEquals((await ok!.json()).role, "check");
+});
+
+// ---- The site gate's session (`site`; Davies, 2026-11-05: "任何人不登录应该任何东西都下载不了才行") ---------------------------
+const unb64 = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
+const gateKey = async (x: string) => await crypto.subtle.importKey("jwk", { kty: "OKP", crv: "Ed25519", x }, { name: "Ed25519" }, false, ["verify"]);
+
+Deno.test("siteKeyPair: derived from the app secret alone, the same each time, another for another secret; the vector src/app/site_gate.test.js derives too", async () => {
+  const a = await siteKeyPair(VT_ENV.secret), b = await siteKeyPair(VT_ENV.secret), c = await siteKeyPair("another-secret");
+  assertEquals(a.x, b.x);
+  assertNotEquals(a.x, c.x);
+  // The same derivation in Node (site_gate.test.js) must find the same public key: the two halves agree.
+  assertEquals(a.x, "adDDQi7Ctm1iYnq-wM4zd3Kyjh18PZ-HIgrtaXBifyY");
+});
+
+Deno.test("tokensFor: the app's token and the site's, one role and one expiry; the site's verifies with the public key alone", async () => {
+  const t = await tokensFor("ro", 60_000, VT_ENV.secret);
+  assertEquals((await verifyToken(t.token, VT_ENV.secret))?.role, "ro");
+  const [p, s] = t.site.split(".");
+  assertEquals(JSON.parse(new TextDecoder().decode(unb64(p))), { role: "ro", exp: t.exp, kind: "site" });
+  const pub = await gateKey((await siteKeyPair(VT_ENV.secret)).x);
+  assert(await crypto.subtle.verify({ name: "Ed25519" }, pub, unb64(s), new TextEncoder().encode(p)));
+  // Another secret's key refuses it; and the site's token is no app token (the data functions refuse it).
+  assert(!(await crypto.subtle.verify({ name: "Ed25519" }, await gateKey((await siteKeyPair("another-secret")).x), unb64(s), new TextEncoder().encode(p))));
+  assertEquals(await verifyToken(t.site, VT_ENV.secret), null);
+  assertEquals((await makeSiteToken("admin", 5, VT_ENV.secret)).split(".").length, 2);
+});
+
+Deno.test("the operator's tokens carry the site's session too, of their own role and expiry", async () => {
+  const out = await checkToken(`Bearer ${VT_ENV.cronSecret}`, VT_ENV);
+  const claims = JSON.parse(new TextDecoder().decode(unb64((out.body.site as string).split(".")[0])));
+  assertEquals(claims, { role: "check", exp: out.body.exp, kind: "site" });
+});
+
+Deno.test("site-key route: the public key for anyone, by GET, cached a few minutes; no key without the app secret; others go on", async () => {
+  assertEquals(await siteKeyResponse(new Request("https://x/auth", { method: "POST" }), VT_ENV.secret), null);
+  const r = await siteKeyResponse(new Request("https://x/auth?action=site-key"), VT_ENV.secret);
+  assertEquals([r?.status, r?.headers.get("cache-control")], [200, "public, max-age=300"]);
+  assertEquals(await r!.json(), { keys: [{ kty: "OKP", crv: "Ed25519", x: (await siteKeyPair(VT_ENV.secret)).x }] });
+  const none = await siteKeyResponse(new Request("https://x/auth?action=site-key"), "");
+  assertEquals(none?.status, 500);
+  await none?.body?.cancel();
 });

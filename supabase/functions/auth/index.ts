@@ -5,7 +5,7 @@
 // `data` Edge Function trusts.
 //
 // POST /functions/v1/auth   body: { password: string }
-//   200 OK  { token, role: "admin" | "ro" }
+//   200 OK  { token, site, role: "admin" | "ro" }   site: the site gate's session (Ed25519; see "The site's session" below)
 //   401 Unauthorized
 //   429 Too Many Requests   { lockoutUntil: number }
 //
@@ -59,7 +59,7 @@ export { b64url, sign, clientIpFromHeaders };
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 const TOKEN_TTL_MS  = 24 * 60 * 60 * 1000;
@@ -88,6 +88,62 @@ export async function makeToken(role: "admin" | "ro" | "check", secret = SECRET,
   return `${payload}.${signature}`;
 }
 
+// ---- The site's session (`site`; Davies, 2026-11-05: "任何人不登录应该任何东西都下载不了才行") ------------------------------
+// Beside the app's token every sign-in answers `site`: `{ role, exp, kind: "site" }` signed with Ed25519, which the
+// site's gate (src/app/site_gate.js, Cloudflare's side) checks before it sends any file of the app. The gate holds no
+// secret: it checks with the public half, which `?action=site-key` hands anyone. The private half is derived here
+// from APP_AUTH_SECRET (the seed is an HMAC of a fixed label under it), so there is no new secret to set, store or pass
+// through a person, and rotating APP_AUTH_SECRET rotates this key with it.
+const SITE_SEED_LABEL = "dp-site-gate-ed25519-v1";
+/** PKCS#8's fixed prefix for a raw 32-byte Ed25519 seed (RFC 8410). */
+const PKCS8_ED25519 = [0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20];
+const siteKeys = new Map<string, Promise<{ privateKey: CryptoKey; x: string }>>();
+
+/** The site's key pair for `secret`: the private key, and the public key's `x` (base64url) for the gate. */
+export function siteKeyPair(secret: string): Promise<{ privateKey: CryptoKey; x: string }> {
+  let kept = siteKeys.get(secret);
+  if (!kept) {
+    kept = (async () => {
+      const mac = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      const seed = new Uint8Array(await crypto.subtle.sign("HMAC", mac, new TextEncoder().encode(SITE_SEED_LABEL)));
+      const pk8 = new Uint8Array(48);
+      pk8.set(PKCS8_ED25519);
+      pk8.set(seed, 16);
+      const privateKey = await crypto.subtle.importKey("pkcs8", pk8, { name: "Ed25519" }, true, ["sign"]);
+      const x = (await crypto.subtle.exportKey("jwk", privateKey)).x as string;
+      return { privateKey, x };
+    })();
+    siteKeys.set(secret, kept);
+  }
+  return kept;
+}
+
+/** A `site` token: the role and expiry of the app token it goes with, Ed25519-signed. */
+export async function makeSiteToken(role: "admin" | "ro" | "check", exp: number, secret = SECRET): Promise<string> {
+  const payload = b64url(JSON.stringify({ role, exp, kind: "site" }));
+  const { privateKey } = await siteKeyPair(secret);
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, new TextEncoder().encode(payload)));
+  return `${payload}.${b64url(sig)}`;
+}
+
+/** The app's token and the site's, of one role and one expiry. */
+export async function tokensFor(role: "admin" | "ro" | "check", ttlMs: number, secret = SECRET): Promise<{ token: string; site: string; exp: number }> {
+  const token = await makeToken(role, secret, ttlMs);
+  const payload = token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
+  const exp = JSON.parse(atob(payload + "=".repeat((4 - payload.length % 4) % 4))).exp as number;
+  return { token, site: await makeSiteToken(role, exp, secret), exp };
+}
+
+/** `?action=site-key` (GET or POST, no credential): the public key the site's gate checks a session with. */
+export async function siteKeyResponse(req: Request, secret = SECRET): Promise<Response | null> {
+  if (new URL(req.url).searchParams.get("action") !== "site-key") return null;
+  if (!secret) return json(500, { error: "auth not configured" });
+  const { x } = await siteKeyPair(secret);
+  return new Response(JSON.stringify({ keys: [{ kty: "OKP", crv: "Ed25519", x }] }), {
+    headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "public, max-age=300" },
+  });
+}
+
 export type ViewerTokenEnv = { cronSecret: string; viewerPwd: string; roPwd: string; adminPwd: string; secret: string };
 
 /**
@@ -112,12 +168,10 @@ export async function viewerToken(authorization: string | null, env: ViewerToken
   return { status: 200, body: await operatorToken("ro", env.secret) };
 }
 
-/** A token of `role` for VIEWER_TOKEN_TTL_MS, with its expiry. */
+/** A token of `role` for VIEWER_TOKEN_TTL_MS, the site's session beside it, with their expiry. */
 async function operatorToken(role: "ro" | "check", secret: string): Promise<Record<string, unknown>> {
-  const token = await makeToken(role, secret, VIEWER_TOKEN_TTL_MS);
-  const payload = token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
-  const exp = JSON.parse(atob(payload + "=".repeat((4 - payload.length % 4) % 4))).exp as number;
-  return { token, role, exp };
+  const { token, site, exp } = await tokensFor(role, VIEWER_TOKEN_TTL_MS, secret);
+  return { token, site, role, exp };
 }
 
 /**
@@ -234,6 +288,9 @@ async function clearAttempts(ip: string): Promise<void> {
 if (import.meta.main) Deno.serve(async (req: Request) => {
   try {
     if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+    // The site gate's public key: no credential, no body, before the method check (the gate reads it with a GET).
+    const sk = await siteKeyResponse(req);
+    if (sk) return sk;
     if (req.method !== "POST")    return json(405, { error: "method not allowed" });
 
     // The operator's viewer and check tokens, before anything of the password form: they read no body and touch no lockout row.
@@ -267,8 +324,9 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
     if (role) {
       // Successful login — wipe any failed-attempt counter for this IP.
       clearAttempts(ip).catch(() => {});
-      const token = await makeToken(role);
-      return json(200, { token, role });
+      // The app's token and, beside it, the site's session for the gate (`site`), of one expiry.
+      const { token, site } = await tokensFor(role, TOKEN_TTL_MS);
+      return json(200, { token, site, role });
     }
 
     // Wrong password → atomic increment via SQL function. The function
