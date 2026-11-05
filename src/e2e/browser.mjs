@@ -3,7 +3,7 @@
 // a few pixels differently from the Chrome the site's visitors run: with the site's own Inter four layout checks failed
 // in the shell (141 and 153) and passed in full Chrome (141 and 153). `channel: 'chromium'` is Playwright's documented
 // switch to its full Chromium in the new headless mode ("Use "chromium" to opt in to new headless mode"), the build
-// `playwright install --no-shell chromium` downloads (check.yml). A container that ships its own Chromium names it with
+// `playwright install --no-shell chromium` downloads (once per machine: the gates run locally). A container that ships its own Chromium names it with
 // PLAYWRIGHT_CHROMIUM_PATH, which wins. `e2e_browser.test.js` pins all three.
 
 /**
