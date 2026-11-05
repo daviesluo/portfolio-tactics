@@ -8,13 +8,16 @@
 //   2. authenticate(pw) (async) POSTs to /functions/v1/auth, which
 //      validates server-side and returns { token, role } on success.
 //      Token format: `<base64url(payload)>.<base64url(sig)>` where
-//      payload is `{ role: "admin" | "ro", exp: <ms> }`.
+//      payload is `{ role: "admin" | "ro" | "check", exp: <ms> }`.
 //
 // Two roles, two secrets — both validated server-side in the `auth`
 // Edge Function (see `APP_ADMIN_PWD` / `APP_RO_PWD` env vars there); the
 // actual values intentionally don't appear in this client bundle:
 //   `?pwd=<admin-secret>`     / typing it → admin (full edit)
-//   `?pwd=<read-only-secret>` / typing it → read-only (shareable view)
+//   `?pwd=<read-only-secret>` / typing it → read-only (shareable view), without the Agents page
+//   (Davies, 2026-11-05: the viewer's menu has no Agents item and the agents function refuses the viewer's token)
+// A third role, `check`, no password gives: the operator's check of the real site (`auth?action=check-token`, cron
+// bearer, 30 minutes; bin/site-check.mjs). It reads what a viewer reads and the Agents page too, and edits nothing.
 //
 // Server-side IP-keyed lockout (3 wrong → 24 h) is handled inside the
 // Edge Function — the client just relays its 401 / 429 verdicts.
@@ -79,7 +82,7 @@ export function consumeUrlPassword() {
 // — verification still happens server-side on every data call. We only
 // need the role + exp to decide whether to reuse a sessionStorage token
 // across reloads (so a SW update / browser refresh doesn't re-prompt).
-/** @returns {{role: 'admin'|'ro', exp: number} | null} */
+/** @returns {{role: 'admin'|'ro'|'check', exp: number} | null} */
 export function decodeAppToken(token) {
   if (!token) return null;
   const dot = token.indexOf(".");
@@ -89,9 +92,21 @@ export function decodeAppToken(token) {
     const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
     const payload = JSON.parse(atob(padded));
     if (typeof payload.exp !== "number" || payload.exp < Date.now()) return null;
-    if (payload.role !== "admin" && payload.role !== "ro") return null;
+    if (!APP_ROLES.includes(payload.role)) return null;
     return payload;
   } catch { return null; }
+}
+
+/** The roles a token can carry. */
+export const APP_ROLES = /** @type {const} */ (['admin', 'ro', 'check']);
+
+/**
+ * What a signed-in role may do: edit (the admin alone) and see the Agents page (the admin, and the operator's check;
+ * never the viewer).
+ * @param {string} role @returns {{ isReadOnly: boolean, agents: boolean }}
+ */
+export function authOfRole(role) {
+  return { isReadOnly: role !== 'admin', agents: role === 'admin' || role === 'check' };
 }
 
 // Async: hit the auth Edge Function. Resolves to:
@@ -126,7 +141,7 @@ export async function authenticate(pw) {
       const { token, role } = await res.json();
       if (token && role) {
         setAppToken(token);
-        return { isReadOnly: role === "ro" };
+        return authOfRole(role);
       }
     }
 

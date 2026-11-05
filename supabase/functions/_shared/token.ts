@@ -8,8 +8,11 @@
 // had drifted apart, are gone; don't add another.
 //
 // Token format (issued by the `auth` function): `<b64url(payload)>.<b64url(sig)>`
-// where payload is `{ role: "admin" | "ro", exp: <ms> }`, signed
-// HMAC-SHA256 with APP_AUTH_SECRET.
+// where payload is `{ role: "admin" | "ro" | "check", exp: <ms> }`, signed
+// HMAC-SHA256 with APP_AUTH_SECRET. `check` is the operator's check of the real
+// site (`auth?action=check-token`, cron bearer, 30 minutes, no password): every
+// function that tests `role === "admin"` treats it as the viewer, and `agents`
+// lets it read the Agents page, which it refuses the viewer (2026-11-05).
 
 const SECRET = Deno.env.get("APP_AUTH_SECRET") ?? "";
 const enc = new TextEncoder();
@@ -32,7 +35,8 @@ export async function sign(payload: string, secret: string): Promise<string> {
   return b64url(new Uint8Array(sig));
 }
 
-export type Verified = { role: "admin" | "ro"; exp: number };
+export type Role = "admin" | "ro" | "check";
+export type Verified = { role: Role; exp: number };
 
 // Constant-time string equality: a secret compared byte by byte with an
 // early exit tells a caller, by how long the answer takes, how much of a
@@ -56,7 +60,7 @@ export async function verifyToken(token: string, secret = SECRET): Promise<Verif
     const json = atob(padded + "=".repeat((4 - padded.length % 4) % 4));
     const obj = JSON.parse(json);
     if (typeof obj?.exp !== "number" || obj.exp < Date.now()) return null;
-    if (obj?.role !== "admin" && obj?.role !== "ro") return null;
+    if (obj?.role !== "admin" && obj?.role !== "ro" && obj?.role !== "check") return null;
     return obj as Verified;
   } catch {
     return null;

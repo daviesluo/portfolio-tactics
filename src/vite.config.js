@@ -7,6 +7,7 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { buildStamp } from './build_stamp.js';
+import { chunkFileName } from './app/chunk_names.js';
 
 // The build's stamp (`ops_error.ver`): a hash of the source, never the clock, so a commit's bundle can be rebuilt
 // byte for byte (review F7). build_stamp.js has the rule and its reasons.
@@ -95,6 +96,14 @@ export default defineConfig({
           // OUT of the precache so it isn't pushed to every install — it's
           // runtime-cached on first use instead (see runtimeCaching below).
           'assets/html2canvas-pro*.js',
+          // The Agents page's code is the admin's alone (Davies, 2026-11-05: "从页面中也下载不到任何关于agents的内容"): it is
+          // never pushed to a device, and a viewer's service worker does not even name it. Every chunk with a module
+          // of <private>/ is named agents-* (`chunkFileNames` below), and so is its stylesheet: one pattern, both.
+          'assets/agents-*',
+          // The same for the pages a viewer cannot open, named admin-* (the transaction history, the editors; Davies,
+          // 2026-11-05: "还有交易记录等不对访客开放的内容"): the site's gate refuses them to a viewer, and one refused file
+          // in the precache would fail the service worker's whole install.
+          'assets/admin-*',
         ],
         // The navigation fallback is bound to "/", not the default "index.html": the host answers /index.html with a
         // 308 to /, and a redirected response cannot satisfy a navigation request — so on a precache miss (the
@@ -207,7 +216,10 @@ export default defineConfig({
       output: {
         hashCharacters: 'hex',
         entryFileNames: 'assets/app-[hash].js',
-        chunkFileNames: 'assets/[name]-[hash].js',
+        // A chunk that carries any module of <private>/ is named agents-*, one of a page a viewer cannot open admin-*,
+        // whatever Rollup would call them (app/chunk_names.js): the precache leaves both names out, the
+        // site's gate serves them by role, and src/agents_private.test.js checks no other file carries the Agents' text.
+        chunkFileNames: chunkFileName,
         assetFileNames: 'assets/[name]-[hash][extname]',
       },
     },

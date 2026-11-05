@@ -1906,28 +1906,14 @@ body {
 
 
 .ag-body { padding-top: 16px; }
-
-@keyframes ag-pulse { 0%, 100% { box-shadow: 0 0 0 2px var(--gain-dim); } 50% { box-shadow: 0 0 0 5px transparent; } }
-
 .ag-empty { padding: 24px; text-align: center; }
-
-@keyframes ag-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
-
-
-
 .modal:has(.ag-body), .modal:has(.ag-body) .modal-body, .ag-body { scrollbar-width: none; }
 .modal:has(.ag-body)::-webkit-scrollbar, .modal:has(.ag-body) .modal-body::-webkit-scrollbar, .ag-body::-webkit-scrollbar { display: none; }
-
 @media (max-width: 760px) {
-  
   .ag-body { padding-left: 12px; padding-right: 12px; }
 }
-
-
 
 @media (min-width: 761px) {
   .modal.size-lg:has(.ag-body) { height: 85vh; }
   .modal.size-lg:has(.ag-body) > .modal-body { flex: 1 1 auto; }
 }
-
-

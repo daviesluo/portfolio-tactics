@@ -440,6 +440,9 @@ export const Storage = {
       return false;
     }
   },
+  // A read-only viewer's board drops the Agents page's kept copy (Davies, 2026-11-05): a browser the admin used holds
+  // the dashboard, and the page is not the viewer's to read.
+  dropAgentsCache: () => { try { localStorage.removeItem(STORAGE_KEYS.agentsCache); } catch { /* storage refused */ } },
   // The Target price page's kept copy (see STORAGE_KEYS.targetsCache), or null: a week at most, as the board's own.
   /** @returns {{ at: number, data: any } | null} */
   loadTargetsCache: () => {

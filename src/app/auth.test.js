@@ -4,7 +4,7 @@
 // silently fall back to re-prompting for the password on every reload,
 // which is exactly the bug we already shipped once.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { decodeAppToken, getAppToken, setAppToken, onSignOut, signOut, noteAuthStatus } from './auth.js';
+import { authOfRole, decodeAppToken, getAppToken, setAppToken, onSignOut, signOut, noteAuthStatus } from './auth.js';
 
 // Browser-shaped sessionStorage stub — `vi.stubGlobal` works around
 // `sessionStorage` being a non-configurable getter in some node envs.
@@ -39,6 +39,14 @@ describe('decodeAppToken', () => {
     const payload = { role: 'admin', exp: Date.now() - 1 };
     const token = `${b64url(JSON.stringify(payload))}.fakesig`;
     expect(decodeAppToken(token)).toBeNull();
+  });
+
+  it("keeps the operator's check role (auth?action=check-token), and authOfRole gives the Agents page to the admin and the check alone", () => {
+    const check = { role: 'check', exp: Date.now() + 60_000 };
+    expect(decodeAppToken(`${b64url(JSON.stringify(check))}.fakesig`)).toEqual(check);
+    expect([authOfRole('admin'), authOfRole('check'), authOfRole('ro'), authOfRole('superadmin')]).toEqual([
+      { isReadOnly: false, agents: true }, { isReadOnly: true, agents: true }, { isReadOnly: true, agents: false }, { isReadOnly: true, agents: false },
+    ]);
   });
 
   it('rejects unknown roles', () => {
@@ -122,7 +130,7 @@ describe('authenticate', () => {
   it('a 200 with a token signs in and keeps the token', async () => {
     const { authenticate } = await import('./auth.js');
     answer(200, { token: 'abc', role: 'ro' });
-    expect(await authenticate('pw')).toEqual({ isReadOnly: true });
+    expect(await authenticate('pw')).toEqual({ isReadOnly: true, agents: false });
     expect(getAppToken()).toBe('abc');
   });
 

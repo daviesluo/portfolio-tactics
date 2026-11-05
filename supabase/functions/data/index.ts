@@ -66,7 +66,7 @@ const SB_HEADERS = {
  * folded (./ro_view.ts). A cold project (no row yet) is null data and version 0 for both, so the client's
  * optimistic-concurrency state has a starting point (an If-Match of 0 succeeds on the first save). Pure, for testing.
  */
-export function loadAnswer(role: "admin" | "ro", rows: unknown, nowMs: number): { data: unknown; version: number } {
+export function loadAnswer(role: "admin" | "ro" | "check", rows: unknown, nowMs: number): { data: unknown; version: number } {
   if (!Array.isArray(rows) || rows.length === 0) return { data: null, version: 0 };
   const row = rows[0] ?? {};
   const version = typeof row.version === "number" ? row.version : 0;

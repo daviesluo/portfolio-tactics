@@ -17,7 +17,7 @@ import { usMarketPhase, usMarketHoursUtc, isWeekendDeadZone } from '../prices/ma
 import { Storage } from './storage.js';
 import { POSITION_COORDS } from '../portfolio/positions.js';
 import { INITIAL_PORTFOLIO } from '../portfolio/data.js';
-import { consumeUrlPassword, decodeAppToken, getAppToken, authenticate, onSignOut, signOut } from './auth.js';
+import { consumeUrlPassword, decodeAppToken, getAppToken, authenticate, authOfRole, onSignOut, signOut } from './auth.js';
 import { loadPortfolioRemote, savePortfolioRemote, portfolioUserFingerprint, knownPortfolioVersion, PORTFOLIO_BROADCAST_CHANNEL, TAB_ID } from '../portfolio/portfolio_remote.js';
 import { createPortfolioSaver, draftAfterSave, pendingDraftAction } from '../portfolio/portfolio_saver.js';
 import { shownPricesOf, withShownPrices, withoutPriced } from '../portfolio/shown_prices.js';
@@ -120,14 +120,24 @@ function ModalBoundary({ name, title, onClose, bodyClass, children }) {
   );
 }
 
-/** Warm every split chunk. Idempotent — the module cache dedupes. */
-function prefetchModalChunks() {
+/**
+ * Warm every split chunk the role can open. Idempotent — the module cache dedupes. A read-only viewer is sent neither
+ * the Agents page's code nor its data (Davies, 2026-11-05: "从页面中也下载不到任何关于agents的内容"), nor the code of the
+ * pages it cannot open, the transaction history and the editors ("还有交易记录等不对访客开放的内容"): the site's gate
+ * refuses those files to it (app/site_gate.js).
+ * @param {boolean} agents  may this role open the Agents page (auth.js authOfRole)
+ * @param {boolean} isReadOnly
+ */
+function prefetchModalChunks(agents, isReadOnly) {
   // Through each page's own `preload`, so the page knows its code is here and its first open renders it at once
   // instead of suspending into its frame (see lazyPage). Best-effort: a chunk that fails here is retried, healed and
   // reported by `lazyPage` at the click, so a failure in the warm-up is not a second report.
-  for (const page of [TickerChartModal, HoldingsListModal, SectorsListModal, TargetPriceModal, TransactionHistoryModal, AgentsModal, PositionDrillModal, EditTickerModal, AddTickerModal, CashModal]) page.preload();
+  const pages = [TickerChartModal, HoldingsListModal, SectorsListModal, TargetPriceModal, PositionDrillModal];
+  if (!isReadOnly) pages.push(TransactionHistoryModal, EditTickerModal, AddTickerModal, CashModal);
+  if (agents) pages.push(AgentsModal);
+  for (const page of pages) page.preload();
   // The Agents page's data too, so it opens on a drawn page rather than a spinner.
-  import('../agents/agents.js').then((m) => m.prefetchAgentsDashboard()).catch(() => {});
+  if (agents) import('../agents/agents.js').then((m) => m.prefetchAgentsDashboard()).catch(() => {});
   // And the Target price page's analyst targets: one request for every holding, kept for hours (tables/targets_data.js).
   prefetchTargets().catch(() => {});
 }
@@ -259,7 +269,7 @@ function App() {
     // Consume + strip any ?pwd= either way so it never lingers in history.
     const urlPwd = consumeUrlPassword();
     if (existing) {
-      return { pwInput: null, initialAuth: { isReadOnly: existing.role === "ro" } };
+      return { pwInput: null, initialAuth: authOfRole(existing.role) };
     }
     // No token: authenticate the URL pwd if it was present, else null —
     // which renders the themed password form, whose submit sets pwInput.
@@ -359,12 +369,13 @@ function App() {
       <SurfaceBoundary name="update-banner" silent>
         <ServiceWorkerBanner />
       </SurfaceBoundary>
-      <Board isReadOnly={auth.isReadOnly} />
+      <Board isReadOnly={auth.isReadOnly !== false} agents={auth.agents === true} />
     </ErrorBoundary>
   );
 }
 
-function Board({ isReadOnly }) {
+/** @param {{ isReadOnly: boolean, agents?: boolean }} props  `agents`: may this role open the Agents page */
+function Board({ isReadOnly, agents = false }) {
   // Themed confirm dialog (replaces window.confirm for destructive actions
   // — reset board / remove holding). confirmEl is rendered near the other
   // modals below; it portals to <body>.
@@ -578,9 +589,11 @@ function Board({ isReadOnly }) {
   // way. They are off the critical path for rendering the board, but
   // they must be in memory before the first click, not after it.
   useEffect(() => {
-    const id = setTimeout(prefetchModalChunks, 0);
+    const id = setTimeout(() => prefetchModalChunks(agents, isReadOnly), 0);
     return () => clearTimeout(id);
-  }, []);
+  }, [agents, isReadOnly]);
+  // A viewer on a browser the admin used: the Agents page's kept copy goes (storage.js dropAgentsCache).
+  useEffect(() => { if (!agents) Storage.dropAgentsCache(); }, [agents]);
 
   // In read-only mode or history mode, force-disable edit mode.
   useEffect(() => { if (isReadOnly && editMode) setEditMode(false); }, [isReadOnly, editMode]);
@@ -1671,7 +1684,8 @@ function Board({ isReadOnly }) {
         onOpenSectorsList={() => setShowSectorsList(true)}
         onOpenTargetPrice={() => setShowTargetPrice(true)}
         onOpenTransactionHistory={() => { if (!isReadOnly) setShowTransactionHistory(true); }}
-        onOpenAgents={() => setShowAgents(true)}
+        agents={agents}
+        onOpenAgents={() => { if (agents) setShowAgents(true); }}
       />
       </SurfaceBoundary>
 
@@ -1888,7 +1902,7 @@ function Board({ isReadOnly }) {
         </ModalBoundary>
       )}
 
-      {showAgents && (
+      {showAgents && agents && (
         <ModalBoundary name="agents" title="Agents (beta)" bodyClass="ag-body" onClose={() => setShowAgents(false)}>
           <React.Suspense fallback={<ModalFrame title="Agents (beta)" bodyClass="ag-body" onClose={() => setShowAgents(false)} />}>
             <AgentsModal

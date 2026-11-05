@@ -69,6 +69,7 @@ function renderHeader(overrides = {}) {
     onOpenSectorsList: vi.fn(),
     onOpenTargetPrice: vi.fn(),
     onOpenTransactionHistory: vi.fn(),
+    agents: true,
     onOpenAgents: vi.fn(),
     ...overrides,
   };
@@ -228,10 +229,28 @@ describe('Header ☰ menu', () => {
     // The viewer password is shared publicly; every buy and sell with its
     // date and price stays behind the edit password (Davies, 2026-09-23).
     const user = userEvent.setup();
-    renderHeader({ isReadOnly: true });
+    renderHeader({ isReadOnly: true, agents: false });
     await user.click(screen.getByRole('button', { name: /Menu/i }));
     const items = screen.getAllByRole('menuitem').map(b => b.textContent);
-    expect(items).toEqual(['Holding list', 'Sectors list', 'Target price', 'Agents (beta)']);
+    expect(items).toEqual(['Holding list', 'Sectors list', 'Target price']);
+  });
+
+  // Davies, 2026-11-05: "确保下访客密码进入的用户菜单栏里没有agents这个选项".
+  it('has no Agents item for a read-only viewer, nor without the permission at all; the admin and the operator\'s check have it', async () => {
+    const user = userEvent.setup();
+    const menu = async (/** @type {Record<string, unknown>} */ o) => {
+      cleanup();
+      renderHeader(o);
+      await user.click(screen.getByRole('button', { name: /Menu/i }));
+      return screen.getAllByRole('menuitem').map(b => b.textContent);
+    };
+    expect(await menu({ isReadOnly: true, agents: false })).not.toContain('Agents (beta)');
+    expect(await menu({ isReadOnly: false, agents: undefined })).not.toContain('Agents (beta)');
+    expect(await menu({ isReadOnly: true, agents: true })).toEqual(['Holding list', 'Sectors list', 'Target price', 'Agents (beta)']);
+    const onOpenAgents = vi.fn();
+    await menu({ isReadOnly: false, agents: true, onOpenAgents });
+    await user.click(screen.getByRole('menuitem', { name: 'Agents (beta)' }));
+    expect(onOpenAgents).toHaveBeenCalledTimes(1);
   });
 });
 

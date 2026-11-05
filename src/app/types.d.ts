@@ -98,6 +98,8 @@ export interface Portfolio {
  *  variant's fields. */
 export type AppAuth = {
   isReadOnly?: boolean;
+  /** May this role open the Agents page: the admin and the operator's check, never the viewer (auth.js authOfRole). */
+  agents?: boolean;
   locked?: boolean;
   lockUntil?: number;
   /** The server did not answer the check (a 5xx, a timeout, no network): the password was never judged. */
