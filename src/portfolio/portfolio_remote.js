@@ -418,10 +418,9 @@ export function migrate(p) {
     // That is not hypothetical. PLTR's ledger is a complete [•] round
     // trip while shares of it sat in the account;
     // the heal stripped it off the board and held it there. And it is
-    // not a one-off risk: [•] of [•] holdings on this book carry lots that
-    // do not add up to their board shares (BMNR [•] against [•] RKLB [•]
-    // against [•]), so any of them acquiring a sell would have been
-    // next.
+    // not a one-off risk: most holdings on this book carry lots that do
+    // not add up to their board shares, some by most of the position, so
+    // any of them acquiring a sell would have been next.
     //
     // A genuine full sale already writes `shares: [•]` through
     // `netPosition`, so every case this was built for still heals.
