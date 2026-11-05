@@ -82,6 +82,9 @@ vi.mock('../portfolio/portfolio_remote.js', () => ({
   PORTFOLIO_BROADCAST_CHANNEL: 'dp.portfolio',
 }));
 vi.mock('../prices/prefetch.js', () => ({ prefetchAllChartData: vi.fn() }));
+// The Agents page's two modules: what the board warms and opens, counted (the role tests below).
+vi.mock('../agents/agents.js', () => ({ prefetchAgentsDashboard: vi.fn(() => Promise.resolve()) }));
+vi.mock('../agents/agents.jsx', () => ({ AgentsModal: () => <div data-testid="agents-modal" /> }));
 // Force the overnight window so doRefresh exercises the overnight
 // preload path; keep every other market-hours helper real.
 vi.mock('../prices/market_hours.js', async () => {
@@ -119,6 +122,7 @@ import { fetchOvernightSeries } from '../prices/overnight_intraday.js';
 import { fetchHistoricalBatch, fetchTodayRegularClose } from '../prices/historical.js';
 import { fetchTrading212Dividends, syncTrading212History } from '../portfolio/trading212.js';
 import { loadPortfolioRemote, savePortfolioRemote, portfolioUserFingerprint, knownPortfolioVersion } from '../portfolio/portfolio_remote.js';
+import { prefetchAgentsDashboard } from '../agents/agents.js';
 
 beforeEach(() => {
   cleanup();
@@ -152,6 +156,50 @@ describe('App — smoke render', () => {
     // null-page). The auth gate's exact copy is checked separately
     // in auth.test.js — here we just verify the App produced output.
     expect(container.firstChild).toBeTruthy();
+  });
+});
+
+// Davies, 2026-11-05: "确保下访客密码进入的用户菜单栏里没有agents这个选项，而且从页面中也下载不到任何关于agents的内容".
+describe('App — the Agents page by role', () => {
+  const tokenOf = (/** @type {string} */ role) => {
+    const payload = btoa(JSON.stringify({ role, exp: Date.now() + 60 * 60 * 1000 })).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    sessionStorage.setItem('dp.token', `${payload}.sig`);
+  };
+  const header = () => /** @type {any} */ (globalThis).__headerProps;
+  const BOOK = { holdings: { CASH: { isCash: true, lastPrice: 1000 } }, positions: {} };
+  beforeEach(() => { /** @type {any} */ (globalThis).__headerProps = undefined; });
+  const agentsCalls = () => vi.mocked(fetch).mock.calls.filter(([u]) => String(u).includes('/functions/v1/agents'));
+
+  it("a viewer's board offers no Agents item, warms neither its code nor its data, opens nothing when asked, and drops a kept copy", async () => {
+    localStorage.setItem('dp.agentsCache', JSON.stringify({ ts: Date.now(), data: { at: Date.now(), dash: { strategies: [] }, charts: {} } }));
+    tokenOf('ro');
+    vi.mocked(loadPortfolioRemote).mockResolvedValueOnce(/** @type {any} */ (BOOK));
+    const { queryByTestId } = render(<App />);
+    await waitFor(() => expect(header()).toBeTruthy());
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });   // past the warm-up's setTimeout(0)
+    expect(header().agents).toBe(false);
+    await act(async () => { header().onOpenAgents(); });
+    expect(queryByTestId('agents-modal')).toBeNull();
+    expect(prefetchAgentsDashboard).not.toHaveBeenCalled();
+    expect(agentsCalls()).toEqual([]);
+    expect(localStorage.getItem('dp.agentsCache')).toBeNull();
+  });
+
+  it("the admin's board offers it, warms its data and opens it; so does the operator's check, which edits nothing", async () => {
+    for (const role of ['admin', 'check']) {
+      cleanup();
+      vi.clearAllMocks();
+      sessionStorage.clear();
+      tokenOf(role);
+      /** @type {any} */ (globalThis).__headerProps = undefined;
+      vi.mocked(loadPortfolioRemote).mockResolvedValueOnce(/** @type {any} */ (BOOK));
+      const { findByTestId } = render(<App />);
+      await waitFor(() => expect(header()?.agents).toBe(true));
+      expect(header().isReadOnly).toBe(role !== 'admin');
+      await waitFor(() => expect(prefetchAgentsDashboard).toHaveBeenCalledTimes(1));
+      await act(async () => { header().onOpenAgents(); });
+      expect(await findByTestId('agents-modal')).toBeTruthy();
+    }
   });
 });
 

@@ -182,7 +182,7 @@ function usdToCcyRate(ccy, marketData) {
 /** What a money cell of the scoreboard shows in a currency whose rate has not landed. */
 const CCY_PENDING = '—';
 
-function Header({ metrics, marketData, marketDataReady, costsPending = false, source, lastUpdated, isRefreshing, onRefresh, editMode, setEditMode, isReadOnly, extendedHours, onToggleExtended, viewMode, onToggleView, hideValues, onToggleHideValues, onOpenHoldingsList, onOpenSectorsList, onOpenTargetPrice = () => {}, onOpenTransactionHistory, onOpenAgents }) {
+function Header({ metrics, marketData, marketDataReady, costsPending = false, source, lastUpdated, isRefreshing, onRefresh, editMode, setEditMode, isReadOnly, extendedHours, onToggleExtended, viewMode, onToggleView, hideValues, onToggleHideValues, onOpenHoldingsList, onOpenSectorsList, onOpenTargetPrice = () => {}, onOpenTransactionHistory, agents = false, onOpenAgents }) {
   // Currency cycle for the scoreboard's PORTFOLIO number. Ephemeral
   // by design — every cold load starts on USD per the user's spec.
   // The button itself renders on every breakpoint; the
@@ -400,7 +400,7 @@ function Header({ metrics, marketData, marketDataReady, costsPending = false, so
             {editMode ? "✓ EDIT MODE" : "EDIT"}
           </button>
         )}
-        <HeaderMenu isReadOnly={isReadOnly} onOpenHoldingsList={onOpenHoldingsList} onOpenSectorsList={onOpenSectorsList} onOpenTargetPrice={onOpenTargetPrice} onOpenTransactionHistory={onOpenTransactionHistory} onOpenAgents={onOpenAgents} />
+        <HeaderMenu isReadOnly={isReadOnly} onOpenHoldingsList={onOpenHoldingsList} onOpenSectorsList={onOpenSectorsList} onOpenTargetPrice={onOpenTargetPrice} onOpenTransactionHistory={onOpenTransactionHistory} agents={agents} onOpenAgents={onOpenAgents} />
       </div>
     </header>
   );
@@ -413,8 +413,10 @@ function Header({ metrics, marketData, marketDataReady, costsPending = false, so
 // Available in both view + edit mode, read-only included (every page
 // behind the menu is view-only) — except Transaction history, which a
 // read-only viewer does not get: every buy and sell with its date and
-// price is the owner's, and the viewer password is shared publicly (2026-09-23).
-function HeaderMenu({ isReadOnly = false, onOpenHoldingsList, onOpenSectorsList, onOpenTargetPrice, onOpenTransactionHistory, onOpenAgents }) {
+// price is the owner's, and the viewer password is shared publicly (2026-09-23);
+// and except Agents, the private module (Davies, 2026-11-05: "确保下访客密码进入的用户
+// 菜单栏里没有agents这个选项"): its item, its code and its data are the admin's alone.
+function HeaderMenu({ isReadOnly = false, agents = false, onOpenHoldingsList, onOpenSectorsList, onOpenTargetPrice, onOpenTransactionHistory, onOpenAgents }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(/** @type {HTMLDivElement | null} */ (null));
   React.useEffect(() => {
@@ -461,11 +463,13 @@ function HeaderMenu({ isReadOnly = false, onOpenHoldingsList, onOpenSectorsList,
               onClick={() => { setOpen(false); onOpenTransactionHistory && onOpenTransactionHistory(); }}
             >Transaction history</button>
           )}
-          <button
-            className="header-menu-item"
-            role="menuitem"
-            onClick={() => { setOpen(false); onOpenAgents && onOpenAgents(); }}
-          >Agents (beta)</button>
+          {agents && (
+            <button
+              className="header-menu-item"
+              role="menuitem"
+              onClick={() => { setOpen(false); onOpenAgents && onOpenAgents(); }}
+            >Agents (beta)</button>
+          )}
         </div>
       )}
     </div>

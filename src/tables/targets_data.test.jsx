@@ -25,11 +25,12 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe('the targets preload', () => {
   it('is started by the app after its first paint, beside the split pages (prefetchModalChunks)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'app.jsx'), 'utf8');
-    const body = src.slice(src.indexOf('function prefetchModalChunks()'), src.indexOf('\n}\n', src.indexOf('function prefetchModalChunks()')));
+    const body = src.slice(src.indexOf('function prefetchModalChunks(agents, isReadOnly)'), src.indexOf('\n}\n', src.indexOf('function prefetchModalChunks(agents, isReadOnly)')));
     expect(body).toContain('prefetchTargets()');
     expect(body).toMatch(/TargetPriceModal/);
     // After the first paint, never in the way of it.
-    expect(src).toContain('const id = setTimeout(prefetchModalChunks, 0);');
+    // With the role's Agents permission since 2026-11-05: the viewer warms nothing of that page.
+    expect(src).toContain('const id = setTimeout(() => prefetchModalChunks(agents, isReadOnly), 0);');
   });
 
   it('asks once, for every holding at once, with the app token; joins a request already out; keeps the copy for its TTL', async () => {

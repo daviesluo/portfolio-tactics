@@ -19,6 +19,13 @@
 //         so this route can neither trip nor clear an IP's lockout)
 //     409 the stored password is not the read-only one, or is the admin one: no token
 //     503 DAVIESLUO_VIEWER_PASSWORD or CRON_SECRET not set
+//   Since 2026-11-05 the viewer's token opens nothing of the Agents page ("确保下访客密码进入的用户菜单栏里没有agents这个选项").
+//
+// POST /functions/v1/auth?action=check-token   Authorization: Bearer <CRON_SECRET>
+//   The operator's check of the Agents page as the real site shows it (`bin/site-check.mjs --page agents`): a token of
+//   role "check", 30 minutes, that reads what the viewer reads and the Agents page's reads too, and edits nothing (every
+//   function's writes test `role === "admin"`). No password gives it: the cron bearer alone, which already opens every
+//   agents action, so it adds no power. 200 { token, role: "check", exp }; 401 / 503 as above; 500 without APP_AUTH_SECRET.
 //
 // Lockout state lives in `public.auth_attempts` (ip primary key, attempts
 // counter, lockout_until unix ms). Anon role has NO access — we only read
@@ -75,7 +82,7 @@ export const VIEWER_TOKEN_TTL_MS = 30 * 60 * 1000;
 // above) — the same module the verifying functions (data / trading212 /
 // ops-error) now use, so issue and verify can't drift apart.
 
-export async function makeToken(role: "admin" | "ro", secret = SECRET, ttlMs = TOKEN_TTL_MS): Promise<string> {
+export async function makeToken(role: "admin" | "ro" | "check", secret = SECRET, ttlMs = TOKEN_TTL_MS): Promise<string> {
   const payload = b64url(JSON.stringify({ role, exp: Date.now() + ttlMs }));
   const signature = await sign(payload, secret);
   return `${payload}.${signature}`;
@@ -102,19 +109,40 @@ export async function viewerToken(authorization: string | null, env: ViewerToken
   if (!constantTimeEqual(env.viewerPwd, env.roPwd)) {
     return { status: 409, body: { error: "the stored viewer password is not the site's read-only password" } };
   }
-  const token = await makeToken("ro", env.secret, VIEWER_TOKEN_TTL_MS);
+  return { status: 200, body: await operatorToken("ro", env.secret) };
+}
+
+/** A token of `role` for VIEWER_TOKEN_TTL_MS, with its expiry. */
+async function operatorToken(role: "ro" | "check", secret: string): Promise<Record<string, unknown>> {
+  const token = await makeToken(role, secret, VIEWER_TOKEN_TTL_MS);
   const payload = token.split(".")[0].replace(/-/g, "+").replace(/_/g, "/");
   const exp = JSON.parse(atob(payload + "=".repeat((4 - payload.length % 4) % 4))).exp as number;
-  return { status: 200, body: { token, role: "ro", exp } };
+  return { token, role, exp };
 }
 
 /**
- * The route itself: null for any request that is not `?action=viewer-token` (the password form goes on), else the
- * reply, never cached, a refused bearer answered only after the wrong-password delay.
+ * The operator's check token (`?action=check-token`): the cron bearer in constant time, then a token of role `check`
+ * for VIEWER_TOKEN_TTL_MS. No password is read, so none can reach a body.
+ */
+export async function checkToken(authorization: string | null, env: Pick<ViewerTokenEnv, "cronSecret" | "secret">): Promise<{ status: number; body: Record<string, unknown> }> {
+  const auth = authorization ?? "";
+  if (!env.cronSecret) return { status: 503, body: { error: "CRON_SECRET not set" } };
+  if (!auth.startsWith("Bearer ") || !constantTimeEqual(auth.slice(7).trim(), env.cronSecret)) {
+    return { status: 401, body: { error: "unauthorised" } };
+  }
+  if (!env.secret) return { status: 500, body: { error: "auth not configured" } };
+  return { status: 200, body: await operatorToken("check", env.secret) };
+}
+
+/**
+ * The operator's two routes: null for any request that is neither `?action=viewer-token` nor `?action=check-token`
+ * (the password form goes on), else the reply, never cached, a refused bearer answered only after the wrong-password delay.
  */
 export async function viewerTokenResponse(req: Request, env: ViewerTokenEnv): Promise<Response | null> {
-  if (new URL(req.url).searchParams.get("action") !== "viewer-token") return null;
-  const out = await viewerToken(req.headers.get("authorization"), env);
+  const action = new URL(req.url).searchParams.get("action");
+  if (action !== "viewer-token" && action !== "check-token") return null;
+  const authorization = req.headers.get("authorization");
+  const out = action === "viewer-token" ? await viewerToken(authorization, env) : await checkToken(authorization, env);
   if (out.status === 401) await new Promise((r) => setTimeout(r, WRONG_PASSWORD_DELAY_MS));
   return new Response(JSON.stringify(out.body), {
     status: out.status,
@@ -208,7 +236,7 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
     if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
     if (req.method !== "POST")    return json(405, { error: "method not allowed" });
 
-    // The operator's viewer token, before anything of the password form: it reads no body and touches no lockout row.
+    // The operator's viewer and check tokens, before anything of the password form: they read no body and touch no lockout row.
     const vt = await viewerTokenResponse(req, {
       cronSecret: CRON_SECRET, viewerPwd: VIEWER_PWD, roPwd: RO_PWD, adminPwd: ADMIN_PWD, secret: SECRET,
     });

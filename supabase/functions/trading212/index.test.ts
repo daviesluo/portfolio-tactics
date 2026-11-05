@@ -974,6 +974,13 @@ Deno.test("answerFor: an admin gets each answer exactly as read", () => {
   assertEquals(roKeys(RO_ORDERS.orders), ["account", "currency", "executed_at", "id", "price", "shares", "side", "ticker"]);
 });
 
+// The operator's `check` token (auth?action=check-token, 2026-11-05) reads what the viewer reads, never the admin's answer.
+Deno.test("answerFor: the operator's check token gets the viewer's answer, word for word", () => {
+  for (const [kind, body] of [["orders", RO_ORDERS], ["dividends", RO_DIVS], ["positions", RO_POSITIONS]] as const) {
+    assertEquals(answerFor("check", kind, body, RO_KEPT, RO_NOW), answerFor("ro", kind, body, RO_KEPT, RO_NOW));
+  }
+});
+
 Deno.test("answerFor: a read-only token gets the kept tickers' fills, folded, in six keys", () => {
   const out = answerFor("ro", "orders", RO_ORDERS, RO_KEPT, RO_NOW) as { orders: unknown[]; complete: boolean };
   assertEquals(Object.keys(out).sort(), ["complete", "orders"]);

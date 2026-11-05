@@ -1656,7 +1656,7 @@ export function forViewer(kind: ViewerKind, body: Record<string, unknown>, kept:
 }
 
 /** An answer for one role: an admin's as it is, a read-only token's through `forViewer`. Pure, for testing. */
-export function answerFor(role: "admin" | "ro", kind: ViewerKind, body: Record<string, unknown>, kept: Set<string>, nowMs: number): Record<string, unknown> {
+export function answerFor(role: "admin" | "ro" | "check", kind: ViewerKind, body: Record<string, unknown>, kept: Set<string>, nowMs: number): Record<string, unknown> {
   return role === "admin" ? body : forViewer(kind, body, kept, nowMs);
 }
 

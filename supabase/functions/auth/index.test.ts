@@ -15,6 +15,7 @@ import {
   WRONG_PASSWORD_DELAY_MS,
   VIEWER_TOKEN_TTL_MS,
   viewerToken,
+  checkToken,
   viewerTokenResponse,
 } from "./index.ts";
 import { verifyToken } from "../data/index.ts";
@@ -188,4 +189,36 @@ Deno.test("viewer-token route: other requests go on to the password form; a refu
   const body = await ok!.json();
   assertEquals(body.role, "ro");
   assertEquals(leaks(body), []);
+});
+
+// ---- The operator's check token (`?action=check-token`; Davies, 2026-11-05) -----------------------------------------
+// The viewer's token no longer opens the Agents page; the operator's check of it on the real site needs its own kind.
+Deno.test("checkToken: only the cron bearer gets one; a missing, wrong or empty bearer is 401 and says nothing else", async () => {
+  for (const auth of [null, "", "Bearer ", "Bearer wrong", "cron-test-secret", `Bearer ${VT_ENV.cronSecret}x`]) {
+    const out = await checkToken(auth, VT_ENV);
+    assertEquals([out.status, out.body], [401, { error: "unauthorised" }], String(auth));
+  }
+  assertEquals((await checkToken("Bearer ", { ...VT_ENV, cronSecret: "" })).status, 503);
+  assertEquals((await checkToken(`Bearer ${VT_ENV.cronSecret}`, { ...VT_ENV, secret: "" })).status, 500);
+});
+
+Deno.test("checkToken: a token of role check, 30 minutes, that the verifying functions accept; no password is read or returned", async () => {
+  const out = await checkToken(`Bearer ${VT_ENV.cronSecret}`, { cronSecret: VT_ENV.cronSecret, secret: VT_ENV.secret });
+  assertEquals(out.status, 200);
+  assertEquals(Object.keys(out.body).sort(), ["exp", "role", "token"]);
+  const v = await verifyToken(out.body.token as string, VT_ENV.secret);
+  assertEquals([v?.role, v?.exp], ["check", out.body.exp]);
+  assert((out.body.exp as number) <= Date.now() + VIEWER_TOKEN_TTL_MS);
+  assertEquals(leaks(out.body), []);
+});
+
+Deno.test("check-token route: answered beside viewer-token, never cached, a refusal after the wrong-password delay", async () => {
+  const t0 = Date.now();
+  const refused = await viewerTokenResponse(new Request("https://x/auth?action=check-token", { method: "POST", headers: { authorization: "Bearer nope" } }), VT_ENV);
+  assertEquals(refused?.status, 401);
+  assert(Date.now() - t0 >= WRONG_PASSWORD_DELAY_MS - 5);
+  await refused?.body?.cancel();
+  const ok = await viewerTokenResponse(new Request("https://x/auth?action=check-token", { method: "POST", headers: { authorization: `Bearer ${VT_ENV.cronSecret}` } }), VT_ENV);
+  assertEquals([ok?.status, ok?.headers.get("cache-control")], [200, "no-store"]);
+  assertEquals((await ok!.json()).role, "check");
 });
