@@ -416,7 +416,7 @@ export function migrate(p) {
     // straight back out.
     //
     // That is not hypothetical. PLTR's ledger is a complete [•] round
-    // trip ([•] bought, [•] sold) while [•] shares sat in the account;
+    // trip while shares of it sat in the account;
     // the heal stripped it off the board and held it there. And it is
     // not a one-off risk: [•] of [•] holdings on this book carry lots that
     // do not add up to their board shares (BMNR [•] against [•] RKLB [•]

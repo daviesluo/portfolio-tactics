@@ -225,10 +225,9 @@ export function depositLedgerFor(h, t212Fills = null) {
   // Reconcile the lot ledger against the board's share count, the same
   // way `lotsFor` does for the value line.
   //
-  // Measured on the real book: [•] of [•] holdings have lots that do not
-  // add up to their board shares, and always in the same direction —
-  // BMNR carries [•] lot shares against [•] on the board, RKLB [•] against
-  // [•] AMZN [•] against [•]. Those are shares that were bought and
+  // Measured on the real book: most holdings have lots that do not add
+  // up to their board shares, and always in the same direction — some
+  // carry a small fraction of their board count in lots. Those are shares that were bought and
   // never written into the ledger, not shares that don't exist: the
   // board count is what the broker and the scoreboard agree on.
   //

@@ -105,8 +105,8 @@ describe('latestErrorAt', () => {
 describe('opsBoxView', () => {
   const box = {
     lines: [
-      { kind: 'agents.page', cls: 'other', message: 'pending buy … 548 min on', count: 83, firstAt: '2026-10-20T06:20:00Z', latestAt: '2026-10-20T16:23:00Z' },
-      { kind: 'agents.page', cls: 'transient', message: 'upstream errors failed 08:48–11:34 UTC, 167 times; latest: …', count: 167, firstAt: '2026-10-20T08:48:00Z', latestAt: '2026-10-20T11:34:00Z', persistent: { ongoing: false } },
+      { kind: 'trading212.sync', cls: 'other', message: 'history page held … 548 min on', count: 83, firstAt: '2026-10-20T06:20:00Z', latestAt: '2026-10-20T16:23:00Z' },
+      { kind: 'prices.fetch', cls: 'transient', message: 'upstream errors failed 08:48–11:34 UTC, 167 times; latest: …', count: 167, firstAt: '2026-10-20T08:48:00Z', latestAt: '2026-10-20T11:34:00Z', persistent: { ongoing: false } },
     ],
     shownRows: 250, hiddenRows: 76, latestAt: '2026-10-20T16:23:00Z',
   };

@@ -545,13 +545,13 @@ function Board({ isReadOnly }) {
   const isDesktop = useIsDesktop();
   // Seed marketData with last-known FX rates from localStorage so the
   // first metrics compute uses real cross-rates (~yesterday's, well
-  // inside a percent of live) instead of fxRateToUSD's silent [•]:[•]
+  // inside a percent of live) instead of fxRateToUSD's silent 1:1
   // fallback. Before this, on cold start CNY-denominated holdings
-  // briefly showed at native × [•] USD = ~[•]× inflated (and GBP at
-  // native × [•] = ~[•] % deflated), then corrected on the first
+  // briefly showed at native × 1.0 USD = ~7× inflated (and GBP at
+  // native × 1.0 = ~20 % deflated), then corrected on the first
   // live tick — the user reported the portfolio total flashing
-  // $[•] k before settling at $[•] k. Storage.loadFxCache returns
-  // `{}` when the cache is missing or older than [•] days, so callers
+  // about 7 % high before settling. Storage.loadFxCache returns
+  // `{}` when the cache is missing or older than 7 days, so callers
   // that need to detect "no FX yet" still can.
   const [marketData, setMarketData] = useState(() => Storage.loadMarketCache());
   // "Has the first successful fetchTickers reply landed yet?" — used
@@ -1102,10 +1102,10 @@ function Board({ isReadOnly }) {
       //      Anything less is held back and reported, never guessed.
       noteHeldSlices(applyTrading212Answer(next.holdings, t212Holdings, t212OrderRows).held);
       // Then give each synced holding the broker's own trade history in
-      // place of whatever stood in for it. The board carried ONE lot of
-      // `[•] @ [•]` for SPCX — T212's average price, not a trade that
-      // ever happened — while twelve real fills ran [•] down to
-      // [•] over a month. That is what "the history only shows very
+      // place of whatever stood in for it. The board carried ONE lot for
+      // SPCX at T212's average price, not a trade that
+      // ever happened — while a dozen real fills ran down by about a
+      // third over a month. That is what "the history only shows very
       // old records" was.
       //
       // Refuses to touch a holding unless the result nets to the share

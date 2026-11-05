@@ -741,9 +741,9 @@ export function shapeT212Portfolio(
     // lots or sells, tags the broker's slice as `t212Shares` /
     // `t212Cost`, and applies only that slice's delta afterwards. With
     // that in place, narrowing the map hides real positions instead of
-    // protecting anything — the account held [•] shares of PLTR that the
-    // board had recorded as sold out, and [•] of GOOG against a board
-    // reading [•] because neither was on the list.
+    // protecting anything — the account held PLTR shares that the board
+    // had recorded as sold out, and fewer GOOG than the board read,
+    // because neither was on the list.
     //
     // Only tickers the board already carries are affected: the client
     // skips anything it doesn't already hold.

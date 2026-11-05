@@ -1,4 +1,4 @@
--- Recorded [•]-minute PRICES, replacing the recorded [•]-minute portfolio
+-- Recorded 5-minute PRICES, replacing the recorded 5-minute portfolio
 -- VALUE that `0022_portfolio_snapshots.sql` introduced.
 --
 -- Why the change of subject. `portfolio_snapshots` stored the answer —
@@ -6,10 +6,10 @@
 -- server had to compute the book's worth for itself. It ended up with a
 -- full second implementation of the ledger maths in TypeScript, running
 -- beside the browser's copy in JavaScript, both writing the same primary
--- key. They disagreed. In the ~[•] hours the pair was live the recorded
--- `deposit_usd` moved between [•] / [•] / [•] / [•] with
--- no money entering or leaving the account, and `value_usd` stepped
--- between ~[•] and ~[•] in the same hour. Neither series is usable as
+-- key. They disagreed. In the ~40 hours the pair was live the recorded
+-- `deposit_usd` moved by nearly half and back with no money entering
+-- or leaving the account, and `value_usd` stepped by about a tenth in
+-- the same hour. Neither series is usable as
 -- history, because it isn't one series.
 --
 -- Recording the INPUTS removes the possibility. A price is a fact the
@@ -20,7 +20,7 @@
 -- same number because they run the same function, not because two
 -- implementations were carefully kept in step.
 --
--- It is also strictly more useful. Yahoo will not sell [•]-minute bars
+-- It is also strictly more useful. Yahoo will not sell 5-minute bars
 -- going back a month, and it has no bars at all for a CN fund or a
 -- `.PVT` holding; these rows do, for every holding, around the clock.
 -- Both charts get them.
