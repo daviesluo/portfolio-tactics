@@ -280,11 +280,22 @@ async function gateHealth(/** @type {any} */ env, /** @type {URL} */ url, /** @t
 export function keyStore(c, d) {
   /** @type {{ keys: CryptoKey[], at: number, tried: number }} */
   const kept = { keys: [], at: 0, tried: 0 };
+  /** @type {Promise<CryptoKey[]> | null} */
+  let inflight = null;
   return async (force = false) => {
     const now = d.now();
     const fresh = kept.keys.length && now - kept.at < KEY_TTL_MS;
-    if ((fresh && !force) || now - kept.tried < KEY_RETRY_MS) return kept.keys;
+    if (fresh && !force) return kept.keys;
+    // A read already out: every request that arrives meanwhile waits for it. A cold isolate gets a page's dozen file
+    // requests at once, and before this the ones after the first found `tried` set and no key yet, and answered [•]
+    // ([•]-[•]-[•] the first live check: holdings_list-*.js [•] on the board's first load).
+    if (inflight) return inflight;
+    if (now - kept.tried < KEY_RETRY_MS) return kept.keys;
     kept.tried = now;
+    inflight = read().finally(() => { inflight = null; });
+    return inflight;
+  };
+  async function read() {
     try {
       const res = await d.fetch(c.keyUrl, { headers: { apikey: c.anon, Authorization: `Bearer ${c.anon}` } });
       const body = await res.json();
@@ -294,10 +305,10 @@ export function keyStore(c, d) {
           keys.push(await crypto.subtle.importKey('jwk', { kty: 'OKP', crv: 'Ed25519', x: k.x }, { name: 'Ed25519' }, false, ['verify']));
         }
       }
-      if (keys.length) { kept.keys = keys; kept.at = now; }
+      if (keys.length) { kept.keys = keys; kept.at = d.now(); }
     } catch { /* the kept keys, if any, until the next try */ }
     return kept.keys;
-  };
+  }
 }
 
 /** @type {ReturnType<typeof keyStore> | null} */
