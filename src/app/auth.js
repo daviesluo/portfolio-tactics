@@ -42,9 +42,28 @@ export function setAppToken(t) {
 /** @type {Set<() => void>} */
 const signOutListeners = new Set();
 
+// The site's gate (site_gate.js, in front of every file on Cloudflare) keeps a session of its own, a cookie set from the
+// `site` token the sign-in answers beside the app's. It marks the page it serves (`<meta name="dp-site-gate">`); only
+// then does the app hand that token over or sign the gate out, so a page served any other way (vite dev, the browser
+// sweep's own server) asks nothing of a gate that is not there.
+export function gateIsHere() {
+  try { return !!document.querySelector('meta[name="dp-site-gate"]'); } catch { return false; }
+}
+
+/** Hand the gate the session the sign-in answered: it sets its cookie, and the page's files keep coming. @param {string} site */
+export async function openGateSession(site) {
+  if (!site || !gateIsHere()) return false;
+  try {
+    const r = await fetch('/__session', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: site, signal: AbortSignal.timeout(10_000) });
+    return r.ok;
+  } catch { return false; }
+}
+
 /** Forget the token and tell the app, which shows the password form. The next 401 finds no token and does nothing. */
 export function signOut() {
   setAppToken("");
+  // The gate's session goes with it: a signed-out browser is sent nothing of the app again.
+  if (gateIsHere()) fetch('/__session', { method: 'DELETE' }).catch(() => {});
   for (const fn of [...signOutListeners]) {
     try { fn(); } catch { /* one listener failing keeps no one signed in */ }
   }
@@ -138,9 +157,10 @@ export async function authenticate(pw) {
     });
 
     if (res.ok) {
-      const { token, role } = await res.json();
+      const { token, role, site } = await res.json();
       if (token && role) {
         setAppToken(token);
+        await openGateSession(site);
         return authOfRole(role);
       }
     }

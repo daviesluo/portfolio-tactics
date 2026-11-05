@@ -8,6 +8,8 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { buildStamp } from './build_stamp.js';
 import { chunkFileName } from './app/chunk_names.js';
+import { siteGate } from './app/site_gate_build.js';
+import { SB_ANON, SB_URL } from './app/supabase_config.js';
 
 // The build's stamp (`ops_error.ver`): a hash of the source, never the clock, so a commit's bundle can be rebuilt
 // byte for byte (review F7). build_stamp.js has the rule and its reasons.
@@ -60,6 +62,9 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    // The site's gate (app/site_gate.js; Davies, 2026-11-05: "任何人不登录应该任何东西都下载不了才行"): dist/_worker.js, which
+    // Pages runs in front of every file, written from this build so it knows the Agents page's files by their names.
+    siteGate({ srcDir: fileURLToPath(new URL('.', import.meta.url)), sbUrl: SB_URL, anon: SB_ANON }),
     // Service worker via Workbox. registerType:'prompt' installs the new
     // SW in the background but waits for the user to click RELOAD on the
     // banner before it takes over. `autoUpdate` (the previous setting)
