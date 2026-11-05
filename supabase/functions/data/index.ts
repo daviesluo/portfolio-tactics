@@ -6,7 +6,8 @@
 // APP_AUTH_SECRET and reject any request whose signature is invalid or
 // whose `exp` claim has passed.
 //
-//   GET  /functions/v1/data?action=load            → { data | null }
+//   GET  /functions/v1/data?action=load            → { data | null, version }
+//        (a read-only token gets the board cut to what its page uses: `roBoard`, ./ro_view.ts)
 //   POST /functions/v1/data?action=save  body=portfolio
 //   GET  /functions/v1/data?action=price-snapshots&since=<ms>&bucket=<sec>
 //                                                  → { rows: [{ts, prices}] }
@@ -18,6 +19,7 @@
 
 import { reportServerError } from "../_shared/ops.ts";
 import { verifyToken } from "../_shared/token.ts";
+import { roBoard } from "./ro_view.ts";
 
 // Re-exported so this function's index.test.ts (and auth's cross-check
 // test, which verifies an auth-issued token against this module) keep
@@ -58,6 +60,19 @@ const SB_HEADERS = {
   "Content-Type": "application/json",
 };
 
+/**
+ * The `load` answer for one role, from the `board_data` rows read. An admin gets the stored board as it is; a
+ * read-only token gets `roBoard` of it: the holdings its board can show and the fields its page reads, the ledger
+ * folded (./ro_view.ts). A cold project (no row yet) is null data and version 0 for both, so the client's
+ * optimistic-concurrency state has a starting point (an If-Match of 0 succeeds on the first save). Pure, for testing.
+ */
+export function loadAnswer(role: "admin" | "ro", rows: unknown, nowMs: number): { data: unknown; version: number } {
+  if (!Array.isArray(rows) || rows.length === 0) return { data: null, version: 0 };
+  const row = rows[0] ?? {};
+  const version = typeof row.version === "number" ? row.version : 0;
+  return { data: role === "admin" ? row.data : roBoard(row.data, nowMs), version };
+}
+
 // Direct insert into public.ops_errors via the service-role key (RLS
 // denies anon). Used by the top-level try/catch wrap so a runtime
 // crash here becomes a row the admin ⚠ badge surfaces instead of a
@@ -95,17 +110,7 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
         { headers: SB_HEADERS, signal: AbortSignal.timeout(5_000) },
       );
       if (!res.ok) return json(res.status, { error: "load failed" });
-      const rows = await res.json();
-      // Cold project (no row yet) → null data + version 0 so the
-      // client's optimistic-concurrency state has a starting point
-      // (an If-Match of 0 will succeed on the first save).
-      if (!Array.isArray(rows) || rows.length === 0) {
-        return json(200, { data: null, version: 0 });
-      }
-      return json(200, {
-        data: rows[0].data,
-        version: typeof rows[0].version === "number" ? rows[0].version : 0,
-      });
+      return json(200, loadAnswer(verified.role, await res.json(), Date.now()));
     }
 
     // Server-recorded 5-minute prices for the performance charts.

@@ -48,6 +48,7 @@ import {
   sign,
   verifyToken,
   constantTimeEqual,
+  answerFor,
   historyPageRequest,
 } from "./index.ts";
 
@@ -935,4 +936,69 @@ Deno.test("GOOGL_US_EQ — a position, a fill and a dividend all land under GOOG
   assertEquals([fill?.ticker, fill?.t212_ticker], ["GOOGL", "GOOGL_US_EQ"]);
   const div = shapeT212Dividend(divItem({ ticker: "GOOGL_US_EQ", instrument: { isin: "US02079K3059", name: "Alphabet", ticker: "GOOGL_US_EQ", currency: "USD" } }), "invest");
   assertEquals([div?.ticker, div?.t212_ticker], ["GOOGL", "GOOGL_US_EQ"]);
+});
+
+// ---- What a read-only token is sent (answerFor / forViewer, ../data/ro_view.ts). Figures made up. ----------------
+// The key sets are written out here: a field the answers start carrying fails these until it is allowed on purpose.
+
+const RO_NOW = Date.UTC(2026, 10, 5, 12);
+const RO_KEPT = new Set(["ACME", "CASH"]);
+const roKeys = (rows: unknown[]) => [...new Set(rows.flatMap((r) => Object.keys(r as object)))].sort();
+const RO_ORDERS = {
+  orders: [
+    { id: "a1", ticker: "ACME", executed_at: "2025-03-01T14:30:00+00:00", side: "buy", shares: 2, price: 10, account: "invest", currency: "USD" },
+    { id: "a2", ticker: "ACME", executed_at: "2026-03-02T14:30:00+00:00", side: "buy", shares: 1, price: 20, account: "isa", currency: "USD" },
+    { id: "g1", ticker: "GONE", executed_at: "2026-03-02T15:30:00+00:00", side: "sell", shares: 3, price: 4, account: "isa", currency: "USD" },
+  ],
+  complete: true,
+};
+const RO_DIVS = {
+  dividends: [
+    { id: "d1", account: "invest", ticker: "ACME", paid_on: "2026-02-01T15:00:00+00:00", quantity: 4, amount: 0.5, currency: "USD", instrument_currency: "USD",
+      gross_per_share: 0.2, type: "DIVIDEND", amount_holding: 0.5, holding_currency: "USD", fx_rate: 1, fx_source: "same" },
+    { id: "d2", account: "isa", ticker: "GONE", paid_on: "2026-02-01T15:00:00+00:00", quantity: 1, amount: 0.5, currency: "USD", instrument_currency: "USD",
+      gross_per_share: 0.2, type: "DIVIDEND", amount_holding: 0.5, holding_currency: "USD", fx_rate: 1, fx_source: "same" },
+  ],
+  complete: false,
+};
+const RO_POSITIONS = {
+  holdings: { ACME: { shares: 1, cost: 20, previousShares: 1, previousCost: 20 }, GONE: { shares: 2, cost: 3 } },
+  prices: { ACME: 21, GONE: 4, OTHR: 5 },
+  complete: true, updatedAt: "2026-11-05T12:00:00Z", source: "cache",
+};
+
+Deno.test("answerFor: an admin gets each answer exactly as read", () => {
+  for (const [kind, body] of [["orders", RO_ORDERS], ["dividends", RO_DIVS], ["positions", RO_POSITIONS]] as const) {
+    assertStrictEquals(answerFor("admin", kind, body, RO_KEPT, RO_NOW), body);
+  }
+  assertEquals(roKeys(RO_ORDERS.orders), ["account", "currency", "executed_at", "id", "price", "shares", "side", "ticker"]);
+});
+
+Deno.test("answerFor: a read-only token gets the kept tickers' fills, folded, in six keys", () => {
+  const out = answerFor("ro", "orders", RO_ORDERS, RO_KEPT, RO_NOW) as { orders: unknown[]; complete: boolean };
+  assertEquals(Object.keys(out).sort(), ["complete", "orders"]);
+  assertEquals(roKeys(out.orders), ["currency", "executed_at", "price", "shares", "side", "ticker"]);
+  assertEquals(out, {
+    orders: [
+      { ticker: "ACME", side: "buy", shares: 2, price: 10, executed_at: "2025-12-17T00:00:00Z", currency: "USD" },
+      { ticker: "ACME", side: "buy", shares: 1, price: 20, executed_at: "2026-03-02T00:00:00Z", currency: "USD" },
+    ],
+    complete: true,
+  });
+});
+
+Deno.test("answerFor: a read-only token gets the kept tickers' dividends, in four keys", () => {
+  const out = answerFor("ro", "dividends", RO_DIVS, RO_KEPT, RO_NOW) as { dividends: unknown[]; complete: boolean };
+  assertEquals(Object.keys(out).sort(), ["complete", "dividends"]);
+  assertEquals(out, {
+    dividends: [{ ticker: "ACME", paid_on: "2026-02-01T15:00:00+00:00", amount_holding: 0.5, holding_currency: "USD" }],
+    complete: false,
+  });
+});
+
+Deno.test("answerFor: a read-only token gets the kept tickers' slices and prices", () => {
+  const out = answerFor("ro", "positions", RO_POSITIONS, RO_KEPT, RO_NOW);
+  assertEquals(Object.keys(out).sort(), ["complete", "holdings", "prices", "source", "updatedAt"]);
+  assertEquals(out.holdings, { ACME: { shares: 1, cost: 20, previousShares: 1, previousCost: 20 } });
+  assertEquals(out.prices, { ACME: 21 });
 });

@@ -88,6 +88,7 @@ import { reportServerError } from "../_shared/ops.ts";
 import { beatKeyOfRequest, writeBeat } from "../_shared/beats.ts";
 import { constantTimeEqual, verifyToken } from "../_shared/token.ts";
 import { T212_DCA_ETFS, t212TickerToYahoo } from "../_shared/t212_tickers.ts";
+import { keptTickers, roAnswer, roDividends, roOrders } from "../data/ro_view.ts";
 
 // Re-exported so this function's index.test.ts keeps pinning the exact
 // implementation the token gate below trusts.
@@ -1638,6 +1639,42 @@ function t212HistoryAccounts(): Array<[string, string, string]> {
   return accounts;
 }
 
+/** The three answers a read-only token may read. */
+export type ViewerKind = "positions" | "orders" | "dividends";
+
+/**
+ * What a read-only token is sent of an answer, against the tickers its board can show (`keptTickers` of the stored
+ * board, ../data/ro_view.ts): the positions answer's slices and prices for those alone; their fills folded to what the
+ * vs-S&P line and the average cost are made of (`roOrders`); their dividends one row per holding and currency
+ * (`roDividends`). Never the fills or dividends of a position closed for good, nor any field the page does not read.
+ * An admin's answer never comes here. Pure, for testing.
+ */
+export function forViewer(kind: ViewerKind, body: Record<string, unknown>, kept: Set<string>, nowMs: number): Record<string, unknown> {
+  if (kind === "orders") return { orders: roOrders(body.orders, kept, nowMs), complete: body.complete === true };
+  if (kind === "dividends") return { dividends: roDividends(body.dividends, kept, nowMs), complete: body.complete === true };
+  return roAnswer(body, kept);
+}
+
+/** An answer for one role: an admin's as it is, a read-only token's through `forViewer`. Pure, for testing. */
+export function answerFor(role: "admin" | "ro", kind: ViewerKind, body: Record<string, unknown>, kept: Set<string>, nowMs: number): Record<string, unknown> {
+  return role === "admin" ? body : forViewer(kind, body, kept, nowMs);
+}
+
+/** The tickers the stored board can show (`keptTickers`), or null when the board could not be read. */
+async function readKeptTickers(): Promise<Set<string> | null> {
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/board_data?id=eq.1&select=data`, {
+      headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}`, accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return keptTickers(Array.isArray(rows) && rows[0] ? rows[0].data : null);
+  } catch {
+    return null;
+  }
+}
+
 /** One page of fills per account, in turn: two accounts on one endpoint already sit on its 6/min ceiling. */
 async function syncHistoryAccounts(): Promise<Record<string, unknown>[]> {
   const results: Record<string, unknown>[] = [];
@@ -1793,8 +1830,9 @@ if (import.meta.main) {
 
       // Token gate. Either admin or ro is fine — read-only viewers
       // should see the synced holdings the same as the rest of the
-      // portfolio. Anonymous callers get 401 so the holdings aren't
-      // world-readable through the function URL.
+      // portfolio, from answers cut to what their page uses (`send`
+      // below, `forViewer`). Anonymous callers get 401 so the holdings
+      // aren't world-readable through the function URL.
       // `orders-sync` also answers the cron bearer, as the admin it stands in for: the fills, dividends and currency
       // backfills it advances can then be driven from the database (pg_net with the Vault `cron_secret`), not only by
       // an open admin page. Every other action keeps the app token alone.
@@ -1805,6 +1843,18 @@ if (import.meta.main) {
           status: 401, headers: { ...CORS, "content-type": "application/json" },
         });
       }
+
+      // Every answer below goes out through `send`: as it is to an admin, cut to what the page uses to a read-only token
+      // (`forViewer`). The board it is cut against is read once a request; with no board to cut against a read-only
+      // token gets a 503, which its page takes as no answer this time (it keeps what it had), never as an empty book.
+      let keptRead: Promise<Set<string> | null> | null = null;
+      const send = async (kind: ViewerKind, body: Record<string, unknown>): Promise<Response> => {
+        const headers = { ...CORS, "content-type": "application/json" };
+        if (verified.role === "admin") return new Response(JSON.stringify(body), { headers });
+        const kept = await (keptRead ??= readKeptTickers());
+        if (!kept) return new Response(JSON.stringify({ error: "board unavailable" }), { status: 503, headers });
+        return new Response(JSON.stringify(answerFor(verified.role, kind, body, kept, Date.now())), { headers });
+      };
 
       if (!T212_API_KEY) {
         return new Response(JSON.stringify({
@@ -1823,18 +1873,11 @@ if (import.meta.main) {
       // budget a viewer has no business spending).
       if (action === "orders") {
         const snapshot = await readStableOrders();
-        return new Response(JSON.stringify({
-          orders: snapshot.orders,
-          complete: snapshot.complete,
-        }), {
-          headers: { ...CORS, "content-type": "application/json" },
-        });
+        return await send("orders", { orders: snapshot.orders, complete: snapshot.complete });
       }
       if (action === "dividends") {
         const read = await readDividends();
-        return new Response(JSON.stringify({ dividends: read.rows, complete: read.complete }), {
-          headers: { ...CORS, "content-type": "application/json" },
-        });
+        return await send("dividends", { dividends: read.rows, complete: read.complete });
       }
       if (action === "orders-sync") {
         if (verified.role !== "admin") {
@@ -1849,13 +1892,13 @@ if (import.meta.main) {
       const cached = await readCacheRow();
       if (cached && cacheIsFresh(cached.updated_at, now, CACHE_TTL_MS)) {
         const { holdings, prices, complete } = unpackCache(cached.data);
-        return new Response(JSON.stringify({
+        return await send("positions", {
           holdings,
           prices,
           complete,
           updatedAt: cached.updated_at,
           source: "cache",
-        }), { headers: { ...CORS, "content-type": "application/json" } });
+        });
       }
 
       // Stale (or cold). Atomically claim the right to refresh. Only the
@@ -1869,21 +1912,21 @@ if (import.meta.main) {
         const row = refreshed || cached;
         if (row) {
           const { holdings, prices, complete } = unpackCache(row.data);
-          return new Response(JSON.stringify({
+          return await send("positions", {
             holdings,
             prices,
             complete,
             updatedAt: row.updated_at,
             source: "cache",
-          }), { headers: { ...CORS, "content-type": "application/json" } });
+          });
         }
-        return new Response(JSON.stringify({
+        return await send("positions", {
           holdings: {},
           prices: {},
           complete: false,
           updatedAt: new Date().toISOString(),
           source: "stale",
-        }), { headers: { ...CORS, "content-type": "application/json" } });
+        });
       }
 
       try {
@@ -1933,13 +1976,13 @@ if (import.meta.main) {
           complete: everyAccountRead(!!T212_ISA_API_KEY, isaShaped),
         };
         await writeCacheRow(shaped);
-        return new Response(JSON.stringify({
+        return await send("positions", {
           holdings: shaped.holdings,
           prices: shaped.prices,
           complete: shaped.complete,
           updatedAt: new Date().toISOString(),
           source: "live",
-        }), { headers: { ...CORS, "content-type": "application/json" } });
+        });
       } catch (e) {
         // T212 errored after we claimed the refresh slot. Log to
         // Supabase Functions logs for forensics, then serve stale
@@ -1951,21 +1994,21 @@ if (import.meta.main) {
         reportInBackground(reportT212Fault("trading212.upstream", `The positions read failed, so the page was sent ${served}: ${why}`));
         if (cached && cacheIsFresh(cached.updated_at, now, STALE_OK_MS)) {
           const { holdings, prices, complete } = unpackCache(cached.data);
-          return new Response(JSON.stringify({
+          return await send("positions", {
             holdings,
             prices,
             complete,
             updatedAt: cached.updated_at,
             source: "stale",
-          }), { headers: { ...CORS, "content-type": "application/json" } });
+          });
         }
-        return new Response(JSON.stringify({
+        return await send("positions", {
           holdings: {},
           prices: {},
           complete: false,
           updatedAt: new Date().toISOString(),
           source: "stale",
-        }), { headers: { ...CORS, "content-type": "application/json" } });
+        });
       }
     } catch (e) {
       // The outer net — anything not caught by the upstream-error
