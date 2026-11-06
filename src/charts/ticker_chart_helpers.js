@@ -31,8 +31,6 @@ export const NIGHT_BAR_INTERVAL_MS = { '1D': 5 * 60_000, '1W': 15 * 60_000, '1M'
 // tickers that mean nothing to a human and benefit from a label.
 export const TICKER_DISPLAY_NAMES = {
   // The board's private-module holdings (portfolio/board_strategies.js): their slots' names.
-  'STRATEGY-A': 'Strategy A',
-  'STRATEGY-B': 'Strategy B',
   '^GSPC':    'S&P 500',
   '^NDX':     'NASDAQ 100',
   '^RUT':     'Russell 2000',

@@ -593,7 +593,7 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
     }
 
     const url   = new URL(req.url);
-    // The board's two private-module holdings (Strategy A on the left centre-back, Strategy B on the right; _shared/board_strategies.ts):
+    // The board's two private-module holdings (the two centre-backs; _shared/board_strategies.ts):
     // their units, cost, NAV and deposits, the numbers the board shows to either role, and nothing of the Agents page.
     if (url.searchParams.get("action") === "strategies") {
       const strategies = await readBoardStrategies({ url: SUPABASE_URL, key: SERVICE_KEY }).catch(() => null);

@@ -12,11 +12,11 @@
 /** @param {string} ticker */ export const isCnFund    = (ticker) => /^\d{6}$/.test(ticker);
 /** @param {string} ticker */ export const isPvt       = (ticker) => /\.PVT$/i.test(ticker);
 /**
- * The board's private-module holdings (Strategy A, Strategy B; portfolio/board_strategies.js): no listing, valued from their own
+ * The board's private-module holdings (portfolio/board_strategies.js): no listing, valued from their own
  * marks round the clock, in pounds. Not a US equity, not a fund with one NAV a day.
  * @param {string} ticker
  */
-export const isStrategyHolding = (ticker) => /^STRATEGY-[A-Z]$/.test(ticker || '');
+export const isStrategyHolding = (ticker) => /(?!)/.test(ticker || '');
 
 /**
  * Continental-European exchange listings (Yahoo suffixes) — the euro-zone

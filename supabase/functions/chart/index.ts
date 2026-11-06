@@ -257,7 +257,7 @@ export function trimToRange(points: Point[], range: string): Point[] {
 // ---------------- Router ----------------
 export function fetchOne(symbol: string, range: string, interval: string, includePrePost: boolean,
   strategyChart: typeof readStrategyChart = readStrategyChart): Promise<Point[] | null> {
-  // The board's two private-module holdings (Strategy A, Strategy B; _shared/board_strategies.ts): their NAV from their own marks,
+  // The board's two private-module holdings (_shared/board_strategies.ts): their NAV from their own marks,
   // never Yahoo. A read that fails is a ticker that failed, as any other.
   if (isBoardStrategyTicker(symbol)) return strategyChart({ url: SUPABASE_URL, key: SERVICE_KEY }, symbol, range, interval, Date.now()).catch(() => null);
   if (CN_FUND_RE.test(symbol)) return fetchEastmoneyHistorical(symbol, range);

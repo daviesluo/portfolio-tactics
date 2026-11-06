@@ -319,7 +319,7 @@ export async function prefetchAllChartData({ tickers, spSymbol, extendedHours, p
   // indices (^GSPC/^NDX/^RUT/^SOX) come in via `mcTickers` and are
   // gated by PE_PROXIED_INDICES. Other MC symbols (^VIX/^TNX/BZ=F/
   // forex) have no EPS so they're filtered server-side too.
-  // A private-module holding (Strategy A, Strategy B) has no earnings: never asked.
+  // A private-module holding has no earnings: never asked.
   const peEligible = Array.from(new Set([
     ...portfolioTickers.filter((t) => !isStrategyHolding(t)),
     ...mcList.filter(t => PE_PROXIED_INDICES.has(t)),

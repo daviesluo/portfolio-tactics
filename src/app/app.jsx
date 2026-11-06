@@ -473,7 +473,7 @@ function Board({ isReadOnly, agents = false }) {
   // each position's average cost net of the dividends it has paid. Every
   // number on screen reads this; every edit and save reads `portfolio`, so
   // the stored cost never carries the dividends and no sync compounds them.
-  // The board's two private-module holdings (Strategy A, Strategy B on the centre-backs; portfolio/board_strategies.js): drawn, never
+  // The board's two private-module holdings (on the centre-backs; portfolio/board_strategies.js): drawn, never
   // stored. Seeded from the last read so the first paint holds them, then each refresh reads them again.
   const [boardStrategies, setBoardStrategies] = useState(() => boardStrategiesOf({ strategies: Storage.loadBoardStrategies() }));
   const shownPortfolio = useMemo(
@@ -1217,7 +1217,7 @@ function Board({ isReadOnly, agents = false }) {
       // fresh to show.
       if (shouldPrefetch) {
         const phaseNow = usMarketPhase(new Date());
-        // With the board's private-module holdings (Strategy A, Strategy B), whose charts the `chart` function serves as any ticker's.
+        // With the board's private-module holdings, whose charts the `chart` function serves as any ticker's.
         const tickerList = [...Object.keys(portfolio?.holdings || {})
           .filter((t) => t !== "CASH" && !portfolio.holdings[t]?.isCash), ...(boardStrategies ?? []).map((s) => s.ticker)];
         const sp = (extendedHours && phaseNow !== "regular") ? "ES=F" : "^GSPC";
