@@ -144,9 +144,10 @@ function prefetchModalChunks(agents, isReadOnly) {
 import { ServiceWorkerBanner } from './sw-banner.jsx';
 import { reportError } from './ops_error.js';
 import { extPriceIsRealAh } from '../charts/indicators.js';
-import { isUsEquity } from '../prices/ticker_class.js';
+import { isStrategyHolding, isUsEquity } from '../prices/ticker_class.js';
 import { fetchTrading212Holdings, fetchTrading212Orders, fetchTrading212Dividends, syncTrading212History, applyTrading212Answer, applyTrading212NightPrice, stripClosedFromPositions } from '../portfolio/trading212.js';
 import { applyFillLedgers, dividendEventsByTicker, fillCurrencyConflicts, withClosedFromFills, withDividendCosts } from '../portfolio/t212_fills.js';
+import { boardStrategiesOf, fetchBoardStrategies, withBoardStrategies } from '../portfolio/board_strategies.js';
 import { fetchOvernightSeries } from '../prices/overnight_intraday.js';
 
 // The last resort: a render-time crash no surface's own boundary caught (one in the board's own frame) shows a readable
@@ -472,9 +473,12 @@ function Board({ isReadOnly, agents = false }) {
   // each position's average cost net of the dividends it has paid. Every
   // number on screen reads this; every edit and save reads `portfolio`, so
   // the stored cost never carries the dividends and no sync compounds them.
+  // The board's two private-module holdings (Strategy A, Strategy B on the centre-backs; portfolio/board_strategies.js): drawn, never
+  // stored. Seeded from the last read so the first paint holds them, then each refresh reads them again.
+  const [boardStrategies, setBoardStrategies] = useState(() => boardStrategiesOf({ strategies: Storage.loadBoardStrategies() }));
   const shownPortfolio = useMemo(
-    () => withDividendCosts(withShownPrices(portfolio, lastShown), dividendEvents.byTicker),
-    [portfolio, lastShown, dividendEvents],
+    () => withBoardStrategies(withDividendCosts(withShownPrices(portfolio, lastShown), dividendEvents.byTicker), portfolio?._isDemo ? null : boardStrategies),
+    [portfolio, lastShown, dividendEvents, boardStrategies],
   );
   // A stored fill or dividend currency that disagrees with what the board
   // would otherwise assume is reported, never quietly decided one way: an
@@ -995,6 +999,12 @@ function Board({ isReadOnly, agents = false }) {
     // The dividends, cached like the fills; not awaited with the prices, so
     // a slow read never holds the board.
     fetchTrading212Dividends().then(takeDividends);
+    // The board's private-module holdings, the same way: a failed read keeps the last ones.
+    fetchBoardStrategies().then((list) => {
+      if (!list) return;
+      setBoardStrategies(list);
+      Storage.saveBoardStrategies(list);
+    });
     const t212OrderRows = Array.isArray(t212OrderRead?.rows) ? t212OrderRead.rows : [];
     setT212Orders(t212OrderRows);
     setT212OrdersComplete(t212OrderRead?.complete === true);
@@ -1207,8 +1217,9 @@ function Board({ isReadOnly, agents = false }) {
       // fresh to show.
       if (shouldPrefetch) {
         const phaseNow = usMarketPhase(new Date());
-        const tickerList = Object.keys(portfolio?.holdings || {})
-          .filter((t) => t !== "CASH" && !portfolio.holdings[t]?.isCash);
+        // With the board's private-module holdings (Strategy A, Strategy B), whose charts the `chart` function serves as any ticker's.
+        const tickerList = [...Object.keys(portfolio?.holdings || {})
+          .filter((t) => t !== "CASH" && !portfolio.holdings[t]?.isCash), ...(boardStrategies ?? []).map((s) => s.ticker)];
         const sp = (extendedHours && phaseNow !== "regular") ? "ES=F" : "^GSPC";
         prefetchAllChartData({
           tickers: tickerList,
@@ -1243,7 +1254,7 @@ function Board({ isReadOnly, agents = false }) {
       // Clear the spinner, success or throw, unless a newer refresh is still running: that one clears it.
       if (seq === refreshSeqRef.current) setIsRefreshing(false);
     }
-  }, [portfolio, extendedHours, quoteGuard, noteHeldSlices, takeDividends]);
+  }, [portfolio, extendedHours, quoteGuard, noteHeldSlices, takeDividends, boardStrategies]);
 
   const doRefreshRef = useRef(doRefresh);
   useEffect(() => { doRefreshRef.current = doRefresh; }, [doRefresh]);
@@ -1494,7 +1505,8 @@ function Board({ isReadOnly, agents = false }) {
   // (same as a Pitch chip); otherwise it opens the chart modal.
   // Heatmap filters CASH out itself, so no isCash guard needed.
   const handleTileClick = useCallback((t) => {
-    if (editMode && !isReadOnly) setEditingTicker(t);
+    // A private-module holding has no lots to edit: its chart, in either mode.
+    if (editMode && !isReadOnly && !isStrategyHolding(t)) setEditingTicker(t);
     else setViewingTicker(t);
   }, [editMode, isReadOnly]);
 

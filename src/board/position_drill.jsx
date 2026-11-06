@@ -73,12 +73,14 @@ function PositionDrillModal({ posKey, position, captainTicker, hotMoverTicker, f
                 onClick={
                   // Edit mode (non-read-only) → open the lot editor.
                   // Otherwise → open the ticker price chart modal.
-                  (editMode && !isReadOnly)
+                  // A private-module holding (portfolio/board_strategies.js) has no lots to edit and is no stored row to remove:
+                  // its card opens its chart in either mode.
+                  (editMode && !isReadOnly && !p.strategy)
                     ? () => onEditTicker(p.ticker)
                     : (onViewChart ? () => onViewChart(p.ticker) : undefined)
                 }
                 onRemove={() => onRemoveTicker(p.ticker)}
-                showRemove={editMode && !isReadOnly}
+                showRemove={editMode && !isReadOnly && !p.strategy}
                 hideValues={hideValues}
                 fxPending={fxPending && !!p.fxMissing}
               />

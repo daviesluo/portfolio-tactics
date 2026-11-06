@@ -21,7 +21,7 @@ import { MA_TTL_MS, tickerChartCacheKey } from '../prices/cache.js';
 import { ChartStore, MaStore } from '../prices/chart_store.js';
 import { priceDividedByTtmEps } from './indicators.js';
 import { getOvernightSeries, fetchOvernightSeries, OVERNIGHT_FETCH_EVENT } from '../prices/overnight_intraday.js';
-import { hasOvernightSession, isCrypto } from '../prices/ticker_class.js';
+import { hasOvernightSession, isCrypto, isStrategyHolding } from '../prices/ticker_class.js';
 import { reportError } from '../app/ops_error.js';
 import { modalTtl, modalCacheGet, modalCacheSet } from './ticker_chart_helpers.js';
 
@@ -87,7 +87,7 @@ export function useTickerChartData({
   // present so the close-to-close slice always has both ends. Everyone else
   // takes the normal variant dispatch.
   const applyChartWindow = (data, rk, variant) => (
-    isCrypto(ticker) && rk === '1D' && Array.isArray(data)
+    (isCrypto(ticker) || isStrategyHolding(ticker)) && rk === '1D' && Array.isArray(data)
       ? filterToLastHours(data, 60)
       : applyVariantFilter(data, variant)
   );
@@ -301,7 +301,7 @@ export function useTickerChartData({
     // those the poll was re-fetching an unchanged series every 5 s all
     // night and all weekend. The effect re-runs when `phase` changes, so
     // the open modal picks the tape back up by itself.
-    const tapeCouldMove = isCrypto(ticker)
+    const tapeCouldMove = isCrypto(ticker) || isStrategyHolding(ticker)
       || phase !== 'overnight'
       || hasOvernightSession(ticker);
     if (!docVisible || !tapeCouldMove) return;

@@ -9,6 +9,7 @@
 
 import { reportServerError } from "../_shared/ops.ts";
 import { verifyToken } from "../_shared/token.ts";
+import { isBoardStrategyTicker, readStrategyChart } from "../_shared/board_strategies.ts";
 
 // `x-app-token` is advertised here BEFORE anything requires it, on
 // purpose. A custom request header makes the call non-simple, so the
@@ -254,7 +255,11 @@ export function trimToRange(points: Point[], range: string): Point[] {
 }
 
 // ---------------- Router ----------------
-function fetchOne(symbol: string, range: string, interval: string, includePrePost: boolean): Promise<Point[] | null> {
+export function fetchOne(symbol: string, range: string, interval: string, includePrePost: boolean,
+  strategyChart: typeof readStrategyChart = readStrategyChart): Promise<Point[] | null> {
+  // The board's two private-module holdings (Strategy A, Strategy B; _shared/board_strategies.ts): their NAV from their own marks,
+  // never Yahoo. A read that fails is a ticker that failed, as any other.
+  if (isBoardStrategyTicker(symbol)) return strategyChart({ url: SUPABASE_URL, key: SERVICE_KEY }, symbol, range, interval, Date.now()).catch(() => null);
   if (CN_FUND_RE.test(symbol)) return fetchEastmoneyHistorical(symbol, range);
   return fetchYahooWithPvtFallback(symbol, range, interval, includePrePost);
 }

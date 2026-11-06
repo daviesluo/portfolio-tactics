@@ -32,7 +32,7 @@ import {
   RANGE_TTL_MS, MA_TTL_MS, PE_TTL_MS, tickerChartCacheKey, isFresh,
   hasAnyNumericField, announceChartsUpdated, markRangeSettled,
 } from './cache.js';
-import { isDailyOnly, isCrypto } from './ticker_class.js';
+import { isDailyOnly, isCrypto, isStrategyHolding } from './ticker_class.js';
 import { priceDividedByTtmEps } from '../charts/indicators.js';
 import { ChartStore, MaStore, YtdStore, hydrateAllChartStores, pruneAllChartStores } from './chart_store.js';
 
@@ -319,8 +319,9 @@ export async function prefetchAllChartData({ tickers, spSymbol, extendedHours, p
   // indices (^GSPC/^NDX/^RUT/^SOX) come in via `mcTickers` and are
   // gated by PE_PROXIED_INDICES. Other MC symbols (^VIX/^TNX/BZ=F/
   // forex) have no EPS so they're filtered server-side too.
+  // A private-module holding (Strategy A, Strategy B) has no earnings: never asked.
   const peEligible = Array.from(new Set([
-    ...portfolioTickers,
+    ...portfolioTickers.filter((t) => !isStrategyHolding(t)),
     ...mcList.filter(t => PE_PROXIED_INDICES.has(t)),
   ]));
   const peCandidates = peEligible.filter((t) => {

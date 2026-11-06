@@ -9,7 +9,7 @@ import { usMarketHoursUtc, isWeekendDeadZone, isUsMarketHoliday, isUsTradingDate
 import { fxToUSD, fxRateToUSD } from '../portfolio/fx.js';
 import { fmtPrice as fmtPr, fmtPct as fmP, fmtMoney as fmtMo, fmtSharesFor as fmtShFor, pctColor as pcC, maskDigits, fmtDayMonth } from '../app/formatters.js';
 import { RANGES, MODAL_RANGE_KEYS, modalRangeKey, windowSinceLastUsClose, windowBetweenLastTwoUsCloses, filterToLast24h, fillVenueSessionGrid, resampleToSlots } from './ytd.js';
-import { isCnFund as isCnFundT, isPvt as isPvtT, isDailyOnly as isDailyOnlyT, hasOvernightSession, isRegularSessionOnly, isCrypto, venueSessionFor, tradingWeekOf } from '../prices/ticker_class.js';
+import { isCnFund as isCnFundT, isPvt as isPvtT, isDailyOnly as isDailyOnlyT, isStrategyHolding, hasOvernightSession, isRegularSessionOnly, isCrypto, venueSessionFor, tradingWeekOf } from '../prices/ticker_class.js';
 import {
   maBarsFor, maBarsForDays, maLabelDaysFor, maSecondDaysFor, computeMaSeries,
   vwapSessionResetFor, vwapSessionKeyOf, computeVwap,
@@ -70,7 +70,7 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
   // trailing P/E that's a reasonable stand-in for the underlying basket).
   // Other ^-prefixed tickers (VIX, SOX, TNX) and futures / forex are
   // ruled out at the pattern stage.
-  const supportsPePattern = !dailyOnly
+  const supportsPePattern = !dailyOnly && !isStrategyHolding(ticker)
     && (!/^\^/.test(ticker) || INDEX_PE_ALLOWED.has(ticker))
     && !/=F$/.test(ticker)
     && !/=X$/.test(ticker)
@@ -147,6 +147,10 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
   );
   const windowedSeries = (slotGrid3M && Array.isArray(series))
     ? resampleToSlots(series, slotGrid3M)
+    // A private-module holding's day is the UTC day its TODAY counts (portfolio/board_strategies.js): its 1D is that day's marks, its
+    // % from its previous close, the board's DAY CHANGE.
+    : (isStrategyHolding(ticker) && rangeKey === '1D' && Array.isArray(series))
+    ? series.filter((/** @type {any} */ p) => String(p.date) >= new Date().toISOString().slice(0, 10))
     : (isCrypto(ticker) && rangeKey === '1D' && Array.isArray(series))
     ? (extendedHours
         ? filterToLast24h(series)
