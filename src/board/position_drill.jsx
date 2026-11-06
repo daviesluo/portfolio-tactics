@@ -2,6 +2,7 @@
 // draws its position cards itself (pitch.jsx), and this opens on a click, so the app loads it after its first paint
 // (`prefetchModalChunks`) instead of in front of it. It draws in modals.jsx's `Modal`.
 import React from 'react';
+import { strategyMoney } from '../portfolio/board_strategies.js';
 import {
   fmtMoney as fmtMo,
   fmtPct as fmtPe,
@@ -128,7 +129,8 @@ function PlayerCard({ player, isCaptain, isHot, flash, onClick, onRemove, showRe
           {m(fmtMo(fxPending ? null : (player.dayChange ?? 0), { signed: true }))} ({fmtPe(player.dayPct)})
         </span>
       </div>
-      <div className="pc-price mono">{m(`${sym}${fmtPri(player.lastPrice)}`)}</div>
+      {/* A private-module holding shows its Value, never a unit price (Davies, 2026-11-06: "…卡片里的单价也删了，全都用value代替…"). */}
+      <div className="pc-price mono">{player.strategy ? m(fmtMo(fxPending ? null : player.marketValue)) : m(`${sym}${fmtPri(player.lastPrice)}`)}</div>
       <div className="pc-rows">
         {/* A private-module holding (portfolio/board_strategies.js) is held in units, not shares: no Shares or
             AC row (Davies, 2026-11-06: "卡片里shares和ac删了"). */}
@@ -137,7 +139,13 @@ function PlayerCard({ player, isCaptain, isHot, flash, onClick, onRemove, showRe
           <div className="pc-row"><span className="dim">AC</span><span className="mono">{m(`${sym}${fmtPri(player.cost)}`)}</span></div>
         </>}
         <div className="pc-row"><span className="dim">Cost</span><span className="mono">{m(fmtMo(costUSD))}</span></div>
-        <div className="pc-row"><span className="dim">Value</span><span className="mono">{m(fmtMo(fxPending ? null : player.marketValue))}</span></div>
+        {player.strategy
+          ? (() => {
+            // Its Value row becomes Deployed with its share of the Value: "—" until a mark carries it.
+            const s = strategyMoney(player, fx);
+            return <div className="pc-row"><span className="dim">Deployed</span><span className="mono">{s.deployedUsd == null || fxPending ? '—' : `${m(fmtMo(s.deployedUsd))} (${fmtPe(s.deployedPct).replace(/^\+/, '')})`}</span></div>;
+          })()
+          : <div className="pc-row"><span className="dim">Value</span><span className="mono">{m(fmtMo(fxPending ? null : player.marketValue))}</span></div>}
         <div className="pc-row"><span className="dim">G/L</span>
           <span className="mono" style={{ color: pctClo(unrlPct) }}>{m(fmtMo(unrlGlUSD, { signed: true }))} ({fmtPe(unrlPct)})</span>
         </div>

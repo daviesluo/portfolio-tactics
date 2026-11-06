@@ -7,6 +7,7 @@ import React from 'react';
 import { Modal } from '../board/modals.jsx';
 import { usMarketHoursUtc, isWeekendDeadZone, isUsMarketHoliday, isUsTradingDateStr, foreignSessionIsOpen } from '../prices/market_hours.js';
 import { fxToUSD, fxRateToUSD } from '../portfolio/fx.js';
+import { strategyMoney } from '../portfolio/board_strategies.js';
 import { fmtPrice as fmtPr, fmtPct as fmP, fmtMoney as fmtMo, fmtSharesFor as fmtShFor, pctColor as pcC, maskDigits, fmtDayMonth } from '../app/formatters.js';
 import { RANGES, MODAL_RANGE_KEYS, modalRangeKey, windowSinceLastUsClose, windowBetweenLastTwoUsCloses, filterToLast24h, fillVenueSessionGrid, resampleToSlots } from './ytd.js';
 import { isCnFund as isCnFundT, isPvt as isPvtT, isDailyOnly as isDailyOnlyT, isStrategyHolding, hasOvernightSession, isRegularSessionOnly, isCrypto, venueSessionFor, tradingWeekOf } from '../prices/ticker_class.js';
@@ -773,10 +774,14 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
           )}
           <div className="modal-meta">
             <span className="mono dim">{
-              rangeKey === 'PE' ? 'P/E' : rangeKey === 'PS' ? 'P/S' : 'Last'
+              holding?.strategy ? 'Value' : rangeKey === 'PE' ? 'P/E' : rangeKey === 'PS' ? 'P/S' : 'Last'
             }</span>
             <span className="mono">{
-              headerPrice != null
+              // A private-module holding: its Value, never a unit price (Davies, 2026-11-06: "这两个的last…也删了，全都用
+              // value代替"), masked as the other money figures.
+              holding?.strategy
+                ? (fxPending ? '—' : (hideValues ? maskDigits : (/** @type {string} */ s) => s)(fmtMo(strategyMoney(holding, fxToUSD(holding.currency || 'USD', marketData)).valueUsd)))
+                : headerPrice != null
                 ? (isRatioRange ? headerPrice.toFixed(2) : fmtTickerPrice(headerPrice, ticker, sym))
                 : '—'
             }</span>
@@ -864,9 +869,17 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
                 </>}
                 <span className="mono dim">Cost <span className="mono">{m(fmtMo(costUsd))}</span></span>
                 <span className="mono dim">·</span>
-                <span className="mono dim">Value <span className="mono">{m(fmtMo(valueUsd))}</span>{portShare != null && (
-                  <span className="mono dim" style={{ fontSize: 10 }}> ({portShare.toFixed(2)}%)</span>
-                )}</span>
+                {holding.strategy
+                  ? (() => {
+                    // Its Value line is Deployed, with Deployed's share of the Value; "—" until a mark carries it.
+                    const s = strategyMoney(holding, fx);
+                    return <span className="mono dim">Deployed <span className="mono">{s.deployedUsd == null || !Number.isFinite(fx) ? '—' : m(fmtMo(s.deployedUsd))}</span>{s.deployedPct != null && Number.isFinite(fx) && (
+                      <span className="mono dim" style={{ fontSize: 10 }}> ({s.deployedPct.toFixed(2)}%)</span>
+                    )}</span>;
+                  })()
+                  : <span className="mono dim">Value <span className="mono">{m(fmtMo(valueUsd))}</span>{portShare != null && (
+                    <span className="mono dim" style={{ fontSize: 10 }}> ({portShare.toFixed(2)}%)</span>
+                  )}</span>}
                 <span className="mono dim">·</span>
                 <span className="mono dim">G/L <span className="mono" style={{ color: pcC(glPct) }}>{m(fmtMo(glUsd, { signed: true }))} ({fmP(glPct)})</span></span>
               </div>
