@@ -1045,7 +1045,7 @@ function UpcomingEarnings({ portfolio, className = '' }) {
     for (const pos of Object.values(portfolio.positions)) {
       for (const t of pos?.tickers || []) {
         const h = portfolio.holdings[t];
-        // A private-module holding (Strategy A, Strategy B) has no earnings to list.
+        // A private-module holding has no earnings to list.
         if (!h || h.isCash || t === 'CASH' || h.strategy) continue;
         onBoard.add(t);
       }

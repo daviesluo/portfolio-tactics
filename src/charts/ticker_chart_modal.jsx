@@ -742,7 +742,10 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
       <header className="modal-head modal-head-roomy">
         <div>
           <h2 className="modal-title mono">
-            {TICKER_DISPLAY_NAMES[ticker]
+            {/* A private-module holding by its name alone ("a private slot"): its ticker is the board's key, not a listing. */}
+            {TICKER_DISPLAY_NAMES[ticker] && isStrategyHolding(ticker)
+              ? TICKER_DISPLAY_NAMES[ticker]
+              : TICKER_DISPLAY_NAMES[ticker]
               ? <>{TICKER_DISPLAY_NAMES[ticker]} <span className="dim" style={{ fontSize: '0.7em' }}>{ticker}</span></>
               : ticker}
           </h2>
@@ -851,10 +854,14 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
             const m = (s) => hideValues ? maskDigits(s) : s;
             return (
               <div className="modal-meta">
-                <span className="mono dim">{m(fmtShFor(holding.shares, ticker))} shares</span>
-                <span className="mono dim">·</span>
-                <span className="mono dim">AC <span className="mono">{m(`${hSym}${fmtPr(holding.cost)}`)}</span></span>
-                <span className="mono dim">·</span>
+                {/* A private-module holding is held in units: no shares or AC (Davies, 2026-11-06:
+                    "卡片里shares和ac删了"). */}
+                {!holding.strategy && <>
+                  <span className="mono dim">{m(fmtShFor(holding.shares, ticker))} shares</span>
+                  <span className="mono dim">·</span>
+                  <span className="mono dim">AC <span className="mono">{m(`${hSym}${fmtPr(holding.cost)}`)}</span></span>
+                  <span className="mono dim">·</span>
+                </>}
                 <span className="mono dim">Cost <span className="mono">{m(fmtMo(costUsd))}</span></span>
                 <span className="mono dim">·</span>
                 <span className="mono dim">Value <span className="mono">{m(fmtMo(valueUsd))}</span>{portShare != null && (

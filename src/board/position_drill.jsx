@@ -130,8 +130,12 @@ function PlayerCard({ player, isCaptain, isHot, flash, onClick, onRemove, showRe
       </div>
       <div className="pc-price mono">{m(`${sym}${fmtPri(player.lastPrice)}`)}</div>
       <div className="pc-rows">
-        <div className="pc-row"><span className="dim">Shares</span><span className="mono">{m(fmtShFor(player.shares, player.ticker))}</span></div>
-        <div className="pc-row"><span className="dim">AC</span><span className="mono">{m(`${sym}${fmtPri(player.cost)}`)}</span></div>
+        {/* A private-module holding (portfolio/board_strategies.js) is held in units, not shares: no Shares or
+            AC row (Davies, 2026-11-06: "卡片里shares和ac删了"). */}
+        {!player.strategy && <>
+          <div className="pc-row"><span className="dim">Shares</span><span className="mono">{m(fmtShFor(player.shares, player.ticker))}</span></div>
+          <div className="pc-row"><span className="dim">AC</span><span className="mono">{m(`${sym}${fmtPri(player.cost)}`)}</span></div>
+        </>}
         <div className="pc-row"><span className="dim">Cost</span><span className="mono">{m(fmtMo(costUSD))}</span></div>
         <div className="pc-row"><span className="dim">Value</span><span className="mono">{m(fmtMo(fxPending ? null : player.marketValue))}</span></div>
         <div className="pc-row"><span className="dim">G/L</span>
