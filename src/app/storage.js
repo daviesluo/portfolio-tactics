@@ -60,6 +60,7 @@ const STORAGE_KEYS = {
   // so a reload starts from the costs the page last showed. A key no
   // earlier version wrote, so it needs no schema step.
   dividends:     'dp.dividends', // { ts, data: [{ ticker, paid_on, quantity, amount_holding, holding_currency, … }] }
+  boardStrategies: 'dp.boardStrategies', // { ts, data: [{ ticker, slot, name, shares, cost, lastPrice, prevClose, dayPct, lots, sells }] }
   // The bars and recorded prints the vs-S&P panel's 24H window was last
   // drawn from, readable on the panel's FIRST render — IndexedDB, where
   // the chart store keeps them, answers only after it. See perf_chart.jsx.
@@ -381,6 +382,18 @@ export const Storage = {
     if (!isFinite(ts) || Date.now() - ts > LAST_SHOWN_MAX_AGE_MS) return null;
     return row.data.filter((/** @type {any} */ r) => r && typeof r === 'object');
   },
+  // The board's private-module holdings last read (see STORAGE_KEYS.boardStrategies, portfolio/board_strategies.js): the list, or
+  // null when none is kept, it is malformed, or past a week old, as the other first-paint stand-ins.
+  /** @returns {any[] | null} */
+  loadBoardStrategies: () => {
+    const row = readJSON(STORAGE_KEYS.boardStrategies, null);
+    if (!row || typeof row !== 'object' || !Array.isArray(row.data)) return null;
+    const ts = Number(row.ts);
+    if (!isFinite(ts) || Date.now() - ts > LAST_SHOWN_MAX_AGE_MS) return null;
+    return row.data.filter((/** @type {any} */ r) => r && typeof r === 'object');
+  },
+  /** @param {any[]} rows */
+  saveBoardStrategies: (rows) => (Array.isArray(rows) ? writeJSON(STORAGE_KEYS.boardStrategies, { ts: Date.now(), data: rows }) : false),
   /** @param {any[]} rows */
   saveDividends: (rows) => (Array.isArray(rows) ? writeJSON(STORAGE_KEYS.dividends, { ts: Date.now(), data: rows }) : false),
   // The 24H chart's last-drawn inputs (see STORAGE_KEYS.perfSeed), or

@@ -11,6 +11,12 @@
 /** @param {string} ticker */ export const isExchangeListed = (ticker) => /\.[A-Z]+$/.test(ticker);
 /** @param {string} ticker */ export const isCnFund    = (ticker) => /^\d{6}$/.test(ticker);
 /** @param {string} ticker */ export const isPvt       = (ticker) => /\.PVT$/i.test(ticker);
+/**
+ * The board's private-module holdings (Strategy A, Strategy B; portfolio/board_strategies.js): no listing, valued from their own
+ * marks round the clock, in pounds. Not a US equity, not a fund with one NAV a day.
+ * @param {string} ticker
+ */
+export const isStrategyHolding = (ticker) => /^STRATEGY-[A-Z]$/.test(ticker || '');
 
 /**
  * Continental-European exchange listings (Yahoo suffixes) — the euro-zone
@@ -56,7 +62,7 @@ export const isEuroExchange = (ticker) => /\.(PA|AS|BR|LS|IR|MI|MC|DE|F|SG|BE|DU
  * @returns {'all'|'weekdays'|'session'}
  */
 export function tradingWeekOf(ticker) {
-  if (isCrypto(ticker)) return 'all';
+  if (isCrypto(ticker) || isStrategyHolding(ticker)) return 'all';
   if (isFutures(ticker) || isForex(ticker)) return 'weekdays';
   return 'session';
 }
@@ -77,7 +83,8 @@ export const isUsEquity = (ticker) =>
   !isIndex(ticker) &&
   !isExchangeListed(ticker) &&
   !isCnFund(ticker) &&
-  !isPvt(ticker);
+  !isPvt(ticker) &&
+  !isStrategyHolding(ticker);
 
 // US-shaped tickers that have NO overnight ("night market") session —
 // OTC ADRs like SoftBank (SFTBY) / Murata (MRAAY) quote only their

@@ -7,6 +7,7 @@
 
 import { reportServerError } from "../_shared/ops.ts";
 import { verifyToken } from "../_shared/token.ts";
+import { readBoardStrategies } from "../_shared/board_strategies.ts";
 import { isUsTradingDay, usRegularCloseMin } from "../_shared/us_market_calendar.ts";
 
 // `x-app-token` is advertised here BEFORE anything requires it, on
@@ -592,6 +593,14 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
     }
 
     const url   = new URL(req.url);
+    // The board's two private-module holdings (Strategy A on the left centre-back, Strategy B on the right; _shared/board_strategies.ts):
+    // their units, cost, NAV and deposits, the numbers the board shows to either role, and nothing of the Agents page.
+    if (url.searchParams.get("action") === "strategies") {
+      const strategies = await readBoardStrategies({ url: SUPABASE_URL, key: SERVICE_KEY }).catch(() => null);
+      return new Response(JSON.stringify(strategies ? { strategies } : { strategies: [], error: "unread" }), {
+        headers: { ...CORS, "Content-Type": "application/json" },
+      });
+    }
     const param = url.searchParams.get("tickers") ?? "";
     // Cap the fan-out. Each ticker spawns one upstream Yahoo / Eastmoney
     // fetch inside the Promise.all below, so an unbounded `tickers` list
