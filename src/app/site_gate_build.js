@@ -54,6 +54,19 @@ export function restrictedFiles(bundle) {
 }
 
 /**
+ * The files of the bundle a viewer is sent (site_gate.js `viewerMay`, beside the root files it names itself): every one
+ * under assets/ that is not restricted, source maps left out. A file not listed here is refused to the viewer, so a chunk
+ * a later build forgets to restrict is not sent to it either.
+ * @param {Record<string, any>} bundle  Rollup's output bundle @param {Record<string, string[]>} restricted
+ * @returns {string[]}
+ */
+export function viewerFiles(bundle, restricted) {
+  return Object.values(bundle).map((f) => String(f.fileName))
+    .filter((n) => n.startsWith('assets/') && !/\.map$/.test(n) && !Object.prototype.hasOwnProperty.call(restricted, n))
+    .sort();
+}
+
+/**
  * The gate's source with its CONFIG.
  * @param {string} source site_gate.js @param {import('./site_gate.js').GateConfig} config
  */
@@ -72,8 +85,10 @@ export function siteGate({ srcDir, sbUrl, anon }) {
     apply: /** @type {const} */ ('build'),
     /** @param {unknown} _o @param {Record<string, any>} bundle */
     generateBundle(_o, bundle) {
+      const restricted = restrictedFiles(bundle);
       const config = {
-        restricted: restrictedFiles(bundle),
+        restricted,
+        viewer: viewerFiles(bundle, restricted),
         headers: siteHeaders(fs.readFileSync(path.join(srcDir, 'public', '_headers'), 'utf8')),
         keyUrl: `${sbUrl}/functions/v1/auth?action=site-key`,
         authUrl: `${sbUrl}/functions/v1/auth`,

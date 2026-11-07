@@ -103,7 +103,7 @@ export default defineConfig({
           'assets/html2canvas-pro*.js',
           // The Agents page's code is the admin's alone (Davies, 2026-11-05: "从页面中也下载不到任何关于agents的内容"): it is
           // never pushed to a device, and a viewer's service worker does not even name it. Every chunk with a module
-          // of <private>/ is named agents-* (`chunkFileNames` below), and so is its stylesheet: one pattern, both.
+          // of the Agents page's folder is named agents-* (`chunkFileNames` below), and so is its stylesheet: one pattern, both.
           'assets/agents-*',
           // The same for the pages a viewer cannot open, named admin-* (the transaction history, the editors; Davies,
           // 2026-11-05: "还有交易记录等不对访客开放的内容"): the site's gate refuses them to a viewer, and one refused file
@@ -157,7 +157,12 @@ export default defineConfig({
             // also went to 10 s: it sits below the app's own 8–12 s fetch
             // timeouts, so a merely-slow request now resolves for real
             // instead of being pre-empted by a cached one.
-            urlPattern: /^https:\/\/(.*\.supabase\.co|query[12]\.finance\.yahoo\.com|.*\.cloudflare\.com)\//,
+            // Only the board's own reads are kept (2026-11-07, the audit): a copy here outlived the session on the device,
+            // and the Agents page's answers and the errors box's (the admin's alone) were kept with the rest. A list of
+            // the functions the board reads, not a list of those it must not keep, so a new one is left out until named,
+            // and sw.js names nothing of the Agents page. Workbox writes this function into sw.js as it is.
+            urlPattern: ({ url }) => /^https:\/\/(query[12]\.finance\.yahoo\.com|[^/]*\.cloudflare\.com)\//.test(url.href)
+              || /^https:\/\/[^/]*\.supabase\.co\/functions\/v1\/(prices|chart|data|fundamentals|trading212|overnight-fetch|targets)(?:[/?]|$)/.test(url.href),
             handler: 'NetworkFirst',
             options: {
               cacheName: 'data-api',
@@ -221,7 +226,7 @@ export default defineConfig({
       output: {
         hashCharacters: 'hex',
         entryFileNames: 'assets/app-[hash].js',
-        // A chunk that carries any module of <private>/ is named agents-*, one of a page a viewer cannot open admin-*,
+        // A chunk that carries any module of the Agents page's folder is named agents-*, one of a page a viewer cannot open admin-*,
         // whatever Rollup would call them (app/chunk_names.js): the precache leaves both names out, the
         // site's gate serves them by role, and src/agents_private.test.js checks no other file carries the Agents' text.
         chunkFileNames: chunkFileName,

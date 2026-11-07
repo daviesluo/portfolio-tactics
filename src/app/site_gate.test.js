@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import worker, { COOKIE, GATE_META, SW_REMOVER, cookieValue, handle, isNavigation, keyStore, loginPage, verifySession } from './site_gate.js';
-import { CONFIG_LINE, restrictedFiles, siteHeaders, workerSource } from './site_gate_build.js';
+import worker, { COOKIE, GATE_META, SW_REMOVER, canonicalPath, cookieValue, handle, isNavigation, keyStore, loginPage, verifySession, viewerMay } from './site_gate.js';
+import { CONFIG_LINE, restrictedFiles, siteHeaders, viewerFiles, workerSource } from './site_gate_build.js';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NOW = Date.UTC(2026, 10, 5, 9, 0);
@@ -23,20 +23,27 @@ async function siteToken(/** @type {Record<string, unknown>} */ claims, key = /*
 }
 const tok = (/** @type {string} */ role, exp = NOW + 3600_000) => siteToken({ role, exp, kind: 'site' });
 
-/** A small dist/: the page, the app's chunk, the Agents page's two files, the service worker, robots.txt. */
+/** A small dist/: the page, the app's chunk, the Agents page's two files, a closed page's, a chunk no list names, the 404 page, the service worker, robots.txt. */
 const FILES = {
   '/': ['text/html', '<!doctype html><html><head><script type="module" src="/assets/app-0123abcd.js"></script></head><body></body></html>'],
   '/assets/app-0123abcd.js': ['text/javascript', 'export const app = 1;'],
   '/assets/agents-1111aaaa.js': ['text/javascript', 'export const agents = "the page";'],
   '/assets/agents-2222bbbb.css': ['text/css', '.ag-page{}'],
   '/assets/admin-3333cccc.js': ['text/javascript', 'export const history = 1;'],
+  '/assets/unlisted-4444dddd.js': ['text/javascript', 'export const forgotten = 1;'],
+  '/404.html': ['text/html', '<!doctype html><title>not here</title>'],
   '/sw.js': ['text/javascript', 'self.precache = [];'],
   '/robots.txt': ['text/plain', 'User-agent: *\nDisallow: /\n'],
 };
 const env = {
   ASSETS: {
     fetch: async (/** @type {Request | string} */ r) => {
-      const p = new URL(typeof r === 'string' ? r : r.url).pathname;
+      // As the host reads a path: its escapes decoded and its empty segments folded (`new URL` has folded `.`, `..`
+      // and `\` already), so `/assets/%61gents-…` and `//assets/agents-…` are the Agents page's file to it.
+      const raw = new URL(typeof r === 'string' ? r : r.url).pathname;
+      let p = raw;
+      try { p = decodeURIComponent(raw); } catch { /* a broken escape: as written */ }
+      p = p.replace(/\/{2,}/g, '/');
       const f = /** @type {Record<string, string[]>} */ (FILES)[p];
       return f ? new Response(f[1], { status: 200, headers: { 'content-type': f[0], 'content-length': String(f[1].length) } }) : new Response('404 page', { status: 404, headers: { 'content-type': 'text/html' } });
     },
@@ -44,6 +51,7 @@ const env = {
 };
 const CONFIG = {
   restricted: { 'assets/admin-3333cccc.js': ['admin'], 'assets/agents-1111aaaa.js': ['admin', 'check'], 'assets/agents-2222bbbb.css': ['admin', 'check'] },
+  viewer: ['assets/app-0123abcd.js'],
   headers: { 'Strict-Transport-Security': 'max-age=63072000', 'Content-Security-Policy': "default-src 'self'" },
   keyUrl: 'https://sb.example/functions/v1/auth?action=site-key',
   authUrl: 'https://sb.example/functions/v1/auth',
@@ -63,7 +71,7 @@ describe('the site gate: a visitor who has not signed in', () => {
     expect(new Set(bodies).size).toBe(1);
     const html = bodies[0];
     expect(html).toContain('data-site-gate="login"');
-    for (const s of ['app-0123abcd', 'agents', 'Revolut', 'ag-venue', 'sw.js', 'manifest']) expect(html).not.toContain(s);
+    for (const s of ['app-0123abcd', 'agents', 'the page', 'ag-page', 'sw.js', 'manifest']) expect(html).not.toContain(s);
     expect(pages[0].headers.get('cache-control')).toBe('no-store');
     expect(pages[0].headers.get('content-security-policy')).toMatch(/^default-src 'none'; script-src 'sha256-[A-Za-z0-9+/=]+';/);
   });
@@ -120,6 +128,44 @@ describe('the site gate: a signed-in session', () => {
     }
     expect((await ask('/assets/admin-3333cccc.js', await withCookie('admin'))).status).toBe(200);
     expect((await ask('/assets/admin-3333cccc.js', await withCookie('check'))).status).toBe(404);
+  });
+
+  // 2026-11-07, the audit: each of these sent a viewer the Agents page's chunk (or a closed page's) through the old gate,
+  // which looked its list up on the path as written while the host decoded and folded it.
+  const BYPASSES = [
+    '/assets/%61gents-1111aaaa.js', '/assets/agents%2D1111aaaa.js', '/assets%2fagents-1111aaaa.js', '/assets%2Fagents-1111aaaa.js',
+    '//assets/agents-1111aaaa.js', '/assets//agents-1111aaaa.js', '/assets/%61gents-2222bbbb.css', '/assets/%61dmin-3333cccc.js',
+    '//assets/admin-3333cccc.js', '/assets/agents-1111aaaa.js%00',
+  ];
+
+  it('refuses the viewer every spelling of a restricted file: escapes, %2f, empty segments (404, as a file not there)', async () => {
+    const h = await withCookie('ro');
+    for (const p of BYPASSES) {
+      const r = await ask(p, h);
+      expect([p, r.status, await r.text()]).toEqual([p, 404, 'Not found.\n']);
+    }
+    // The same spellings of the app's own chunk are refused too: nothing the app asks for is written so.
+    for (const p of ['/assets/%61pp-0123abcd.js', '//assets/app-0123abcd.js']) expect((await ask(p, h)).status).toBe(404);
+  });
+
+  it('refuses those spellings to every session, the admin too, and to a page load', async () => {
+    for (const role of ['admin', 'check', 'ro']) {
+      for (const p of BYPASSES) expect([role, p, (await ask(p, await withCookie(role))).status]).toEqual([role, p, 404]);
+    }
+    expect((await ask('//assets/agents-1111aaaa.js', await withCookie('ro', nav))).status).toBe(404);
+  });
+
+  it("sends the viewer only its allowlist: a chunk no list names is refused it, not the admin's or the check's", async () => {
+    const r = await ask('/assets/unlisted-4444dddd.js', await withCookie('ro'));
+    expect([r.status, await r.text()]).toEqual([404, 'Not found.\n']);
+    for (const role of ['admin', 'check']) expect((await ask('/assets/unlisted-4444dddd.js', await withCookie(role))).status).toBe(200);
+    // A role the gate does not know is a viewer.
+    expect((await ask('/assets/unlisted-4444dddd.js', await withCookie('guest'))).status).toBe(404);
+    expect((await ask('/assets/agents-1111aaaa.js', await withCookie('guest'))).status).toBe(404);
+    // A page load of a path not on it: the 404 page.
+    const page = await ask('/no-such', await withCookie('ro', nav));
+    expect([page.status, await page.text()]).toEqual([404, '<!doctype html><title>not here</title>']);
+    expect((await ask('/robots.txt', await withCookie('ro'))).status).toBe(200);
   });
 
   it("the page carries the gate's marker (so the app keeps its session there), not cached, its length not the file's", async () => {
@@ -207,6 +253,18 @@ describe('the site gate: its parts', () => {
     expect(JSON.parse(await r.text())).toEqual({ gate: 'on', app: 'ok' });
   });
 
+  it('canonicalPath keeps a path as the app writes it and refuses one the host could read as another', () => {
+    for (const p of ['/', '/assets/app-0123abcd.js', '/sw.js', '/workbox-f4384b12.js']) expect(canonicalPath(p)).toBe(p);
+    for (const p of ['/assets/%61gents-1.js', '/assets%2fx.js', '//assets/x.js', '/assets//x.js', '/a\\b.js', '/a/./b.js', '/a/../b.js', 'assets/x.js']) {
+      expect([p, canonicalPath(p)]).toEqual([p, null]);
+    }
+    expect(viewerMay('', CONFIG)).toBe(true);
+    expect(viewerMay('workbox-f4384b12.js', CONFIG)).toBe(true);
+    expect(viewerMay('assets/app-0123abcd.js', CONFIG)).toBe(true);
+    expect(viewerMay('assets/unlisted-4444dddd.js', CONFIG)).toBe(false);
+    expect(viewerMay('workbox-nothex!.js', CONFIG)).toBe(false);
+  });
+
   it('cookieValue, isNavigation and verifySession read what they should', async () => {
     expect(cookieValue(`a=1; ${COOKIE}=x.y; b=2`)).toBe('x.y');
     expect(cookieValue('a=1')).toBeNull();
@@ -244,5 +302,11 @@ describe('the site gate: its parts', () => {
       c: { fileName: 'assets/agents-5555ffff.js' },
       d: { fileName: 'assets/admin-7777aaaa.js' },
     })).toEqual({ 'assets/admin-7777aaaa.js': ['admin'], 'assets/agents-1234abcd.js': both, 'assets/agents-5555ffff.js': both, 'assets/agents-9999eeee.css': both });
+    const bundle = {
+      a: { fileName: 'assets/agents-1234abcd.js', viteMetadata: { importedCss: new Set(['assets/agents-9999eeee.css']) } },
+      b: { fileName: 'assets/app-1234abcd.js' }, c: { fileName: 'assets/agents-9999eeee.css' }, d: { fileName: 'assets/index-1111aaaa.css' },
+      e: { fileName: 'assets/app-1234abcd.js.map' }, f: { fileName: 'index.html' }, g: { fileName: 'assets/inter-latin-ffff0000.woff2' },
+    };
+    expect(viewerFiles(bundle, restrictedFiles(bundle))).toEqual(['assets/app-1234abcd.js', 'assets/index-1111aaaa.css', 'assets/inter-latin-ffff0000.woff2']);
   });
 });

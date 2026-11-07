@@ -17,6 +17,13 @@
 // The page posts `site` to /__session, which checks it and sets it as an HttpOnly cookie that lapses with it (24 hours,
 // as the app's token). Rotating APP_AUTH_SECRET rotates the key: a token the kept key refuses has the key read again.
 //
+// What a signed-in viewer gets is an allowlist, not "everything but": the files of the build's bundle that are not
+// restricted (CONFIG.viewer), the few files at the root (VIEWER_ROOT_FILES, the service worker's own), and nothing else, so
+// a file a later build forgets to restrict is still refused. Every path is checked as it is written: one with `%`, `\`,
+// `//` or a `.` / `..` segment is refused to every session, as the host would decode and fold it into another file's
+// (2026-11-07, the audit: `/assets/%61gents-…`, `//assets/agents-…`, `/assets//agents-…`, `/assets%2fagents-…` and
+// `/assets/agents%2D…` each sent a viewer the Agents page's chunk, the list being checked on the raw path).
+//
 // What a visitor without a session gets: the sign-in page for a page load (any path, `?pwd=` read there as the app
 // read it), a self-removing service worker for /sw.js (SW_REMOVER), 401 for anything else, robots.txt, and /__gate,
 // the gate's own health for the monitor. Never a file of the app, and never a sign of which files exist: every
@@ -30,6 +37,28 @@ export const SESSION_PATH = '/__session';
 export const GATE_PATH = '/__gate';
 /** Files anyone may have. */
 export const PUBLIC_PATHS = new Set(['/robots.txt']);
+/** The roles that are sent every file not restricted from them; any other role (the viewer's, one unknown) the allowlist. */
+export const FULL_ROLES = new Set(['admin', 'check']);
+/** The files at the root a viewer is sent beside CONFIG.viewer: the page, the service worker's, the manifest, robots.txt. */
+export const VIEWER_ROOT_FILES = new Set(['', 'index.html', '404.html', 'sw.js', 'manifest.webmanifest', 'robots.txt']);
+/** The service worker's runtime, which the PWA plugin writes after the bundle, named by its hash. */
+const WORKBOX = /^workbox-[0-9a-f]{8}\.js$/;
+
+/**
+ * The path as it is written, or null when the host could read it as another: an escape (`%`), a backslash, an empty
+ * segment (`//`) or a `.` / `..` one. Nothing the app requests has any of them.
+ * @param {string} pathname @returns {string | null}
+ */
+export function canonicalPath(pathname) {
+  if (!pathname.startsWith('/') || /[%\\]/.test(pathname) || pathname.includes('//')) return null;
+  if (pathname.split('/').some((seg) => seg === '.' || seg === '..')) return null;
+  return pathname;
+}
+
+/** Whether a role outside FULL_ROLES is sent `file` (a path without its leading slash). @param {string} file @param {GateConfig} c */
+export function viewerMay(file, c) {
+  return VIEWER_ROOT_FILES.has(file) || WORKBOX.test(file) || (Array.isArray(c.viewer) && c.viewer.includes(file));
+}
 /**
  * What a browser without a session gets for the service worker's script: a worker that removes itself. A device that
  * installed the app keeps serving it from its own cache, page loads included, and only asks the network for this
@@ -50,7 +79,7 @@ const KEY_TTL_MS = 60 * 60 * 1000;
 const KEY_RETRY_MS = 60 * 1000;
 
 /**
- * @typedef {{ restricted: Record<string, string[]>, headers: Record<string, string>, keyUrl: string, authUrl: string, anon: string }} GateConfig
+ * @typedef {{ restricted: Record<string, string[]>, viewer: string[], headers: Record<string, string>, keyUrl: string, authUrl: string, anon: string }} GateConfig
  * @typedef {{ role: string, exp: number }} Session
  * @typedef {{ fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>, now: () => number }} Deps
  */
@@ -199,10 +228,21 @@ export async function handle(req, env, c, d) {
     if (path === '/sw.js') return new Response(SW_REMOVER, { status: 200, headers: base({ 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' }) });
     return plain(401, 'Sign in first.\n');
   }
+  // A path the host could read as another file's: to every session, as one not there.
+  const canon = canonicalPath(path);
+  if (canon === null) return plain(404, 'Not found.\n');
+  const file = canon.slice(1);
   // A file only some roles get (the Agents page's, the pages a viewer cannot open): to anyone else, as one not there.
-  const roles = Object.prototype.hasOwnProperty.call(c.restricted, path.slice(1)) ? c.restricted[path.slice(1)] : null;
+  const roles = Object.prototype.hasOwnProperty.call(c.restricted, file) ? c.restricted[file] : null;
   if (roles && !roles.includes(s.role)) return plain(404, 'Not found.\n');
-  const res = await env.ASSETS.fetch(req);
+  // The viewer (and any role but the full ones): the allowlist alone. A page load of another path is the 404 page.
+  if (!FULL_ROLES.has(s.role) && !viewerMay(file, c)) {
+    if (!isNavigation(req)) return plain(404, 'Not found.\n');
+    const page = await env.ASSETS.fetch(new Request(new URL('/404.html', url.origin)));
+    return withHeaders(new Response(page.body, { status: 404, headers: page.headers }), base, '/404.html');
+  }
+  // ASSETS is asked for the path as checked, never the request as it came.
+  const res = await env.ASSETS.fetch(new Request(new URL(canon + url.search, url.origin), { method: req.method, headers: req.headers, redirect: 'manual' }));
   const type = res.headers.get('content-type') ?? '';
   if (res.status === 200 && /text\/html/.test(type) && (path === '/' || path === '/index.html' || isNavigation(req))) {
     const html = await res.text();
