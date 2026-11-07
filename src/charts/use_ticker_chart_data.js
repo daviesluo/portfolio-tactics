@@ -109,8 +109,9 @@ export function useTickerChartData({
       const ageMs = Date.now() - (cached.ts || 0);
       if (ageMs >= ttl) needsFresh = true;
       // Old 1D rows that pre-date per-bar volume satisfy the TTL but
-      // lack `volume`, silently suppressing VWAP — force a refetch.
-      if (rangeKey === '1D' && !cached.data.some(p => typeof p.volume === 'number')) {
+      // lack `volume`, silently suppressing VWAP — force a refetch. A private-module holding's NAV has no volume
+      // at all, so its preloaded 1D row is taken as it is, as any fresh row: opening its chart asks for nothing more.
+      if (rangeKey === '1D' && !isStrategyHolding(ticker) && !cached.data.some(p => typeof p.volume === 'number')) {
         needsFresh = true;
       }
     } else {

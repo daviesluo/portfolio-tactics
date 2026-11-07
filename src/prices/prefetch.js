@@ -134,9 +134,11 @@ export async function prefetchAllChartData({ tickers, spSymbol, extendedHours, p
     // refetches them through the redeployed Edge Function.
     const extraValid = rk === '1D' ? hasAnyNumericField('volume') : undefined;
     const stale = allSymbols.filter((s) => {
-      const inPerf = isFresh(YtdStore.get(ytdKey(s)), ttl, extraValid);
+      // A private-module holding's NAV has no volume, so its 1D row is fresh by its age alone, as the modal reads it.
+      const valid = isStrategyHolding(s) ? undefined : extraValid;
+      const inPerf = isFresh(YtdStore.get(ytdKey(s)), ttl, valid);
       // tickerChart cache only covers portfolio tickers (modal never opens for spSymbol)
-      const inTicker = s === spSymbol ? true : isFresh(ChartStore.get(tickerKey(s)), ttl, extraValid);
+      const inTicker = s === spSymbol ? true : isFresh(ChartStore.get(tickerKey(s)), ttl, valid);
       return !(inPerf && inTicker);
     });
     rangeMeta.push({ rk, perfKey, ytdKey, params, tickerKey, stale });

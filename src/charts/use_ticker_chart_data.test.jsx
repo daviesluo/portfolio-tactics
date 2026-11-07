@@ -22,6 +22,7 @@ vi.mock('../prices/overnight_intraday.js', () => ({
 
 import { useTickerChartData } from './use_ticker_chart_data.js';
 import { tickerChartCacheKey } from '../prices/cache.js';
+import { isStrategyHolding } from '../prices/ticker_class.js';
 
 const BARS = [
   { date: '2026-05-28T13:30', close: 100, volume: 10 },
@@ -75,6 +76,26 @@ describe('useTickerChartData', () => {
 // tab over a weekend is tens of thousands of Edge calls and a
 // measurable slice of the phone's battery, for a chart nobody is
 // looking at and a tape that is not moving.
+// A private-module holding's preloaded 1D row (the two slots: a NAV, which has no volume) opens as it is (Davies, 2026-11-07:
+// "每次进入网页两个quotes的页面也都加入预加载中"): no fetch on open, where a listed name's row without volume is asked for again.
+describe('useTickerChartData — a private-module holding opens from its preloaded row', () => {
+  const NAV = [{ date: '2026-05-28T00:00', close: 1.18 }, { date: '2026-05-28T00:05', close: 1.2 }];
+  // Skipped where the strategy module is the public mirror's stub, which knows no private-module holding.
+  it.skipIf(!isStrategyHolding('a private slot'))('a private slot draws its row and asks for nothing; NVDA without volume asks again', async () => {
+    fetchHistoricalBatch.mockResolvedValue({});
+    chartMem.set(tickerChartCacheKey('a private slot', '1D', false, 'regular'), { ts: Date.now(), data: NAV });
+    const a = renderHook(() => useTickerChartData(ARGS({ ticker: 'a private slot' })));
+    expect(a.result.current.loading).toBe(false);
+    expect(a.result.current.series).toEqual(NAV);
+    await act(async () => { await Promise.resolve(); });
+    expect(fetchHistoricalBatch).not.toHaveBeenCalled();
+    a.unmount();
+    chartMem.set(tickerChartCacheKey('NVDA', '1D', false, 'regular'), { ts: Date.now(), data: NAV });
+    renderHook(() => useTickerChartData(ARGS()));
+    await waitFor(() => expect(fetchHistoricalBatch).toHaveBeenCalled());
+  });
+});
+
 describe('useTickerChartData — the 1D poll stops when there is nothing to watch', () => {
   const warm = (ticker = 'NVDA', phase = 'regular') => {
     chartMem.set(tickerChartCacheKey(ticker, '1D', false, phase), { ts: Date.now(), data: BARS });

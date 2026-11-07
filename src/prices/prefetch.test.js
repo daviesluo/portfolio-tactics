@@ -12,6 +12,7 @@
 // mem-only — that's fine, we read the same mirror via the same API.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChartStore, MaStore, YtdStore } from './chart_store.js';
+import { isStrategyHolding } from './ticker_class.js';
 
 beforeEach(async () => {
   // Drop any state left over from a previous test.
@@ -238,5 +239,30 @@ describe('prefetchAllChartData does not settle a window on a failed call', () =>
     const { rangeSettled } = await import('./cache.js');
     await prefetchAllChartData({ tickers: ['NOVA'], spSymbol: '^GSPC', extendedHours: false, phase: 'regular' });
     expect(['1W:std', '1M:std', '3M:std'].map(rangeSettled)).toEqual([false, false, false]);
+  });
+});
+
+// The board's private-module holdings (portfolio/board_strategies.js) are preloaded with the book (Davies, 2026-11-07:
+// "每次进入网页两个quotes的页面也都加入预加载中"): every range their chart offers is in the store before a click, under the key the modal
+// reads, and their NAV, which has no volume, is fresh by its age alone, so a second pass asks for none of them again.
+// Skipped where the strategy module is the public mirror's stub, which knows no private-module holding.
+describe('prefetchAllChartData preloads the private-module holdings', () => {
+  it.skipIf(!isStrategyHolding('a private slot'))('writes every modal range of a private slot, and a second pass asks for none of it again', async () => {
+    // Fresh modules: a part above leaves the chart function benched in the fetch layer's own state.
+    vi.resetModules();
+    const { prefetchAllChartData } = await import('./prefetch.js');
+    const { ChartStore } = await import('./chart_store.js');
+    const { tickerChartCacheKey } = await import('./cache.js');
+    const { MODAL_RANGE_KEYS } = await import('../charts/ytd.js');
+    await prefetchAllChartData({ tickers: ['a private slot', 'NVDA'], spSymbol: '^GSPC', extendedHours: false, phase: 'regular' });
+    for (const rk of MODAL_RANGE_KEYS) expect(ChartStore.get(tickerChartCacheKey('a private slot', rk, false, 'regular'))?.data?.length).toBeGreaterThan(1);
+    const asked = /** @type {string[]} */ ([]);
+    const before = /** @type {any} */ (globalThis.fetch).getMockImplementation();
+    /** @type {any} */ (globalThis.fetch).mockImplementation(async (/** @type {any} */ url) => { asked.push(String(url)); return before(url); });
+    await prefetchAllChartData({ tickers: ['a private slot', 'NVDA'], spSymbol: '^GSPC', extendedHours: false, phase: 'regular' });
+    const chartTickers = asked.filter((u) => u.includes('/functions/v1/chart')).flatMap((u) => new URL(u).searchParams.get('tickers')?.split(',') ?? []);
+    // NVDA's 1D rows here carry no volume, so they are asked again (the rule for a listed name); a private slot's are not.
+    expect(chartTickers).toContain('NVDA');
+    expect(chartTickers).not.toContain('a private slot');
   });
 });

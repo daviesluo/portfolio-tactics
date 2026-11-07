@@ -147,7 +147,7 @@ import { extPriceIsRealAh } from '../charts/indicators.js';
 import { isStrategyHolding, isUsEquity } from '../prices/ticker_class.js';
 import { fetchTrading212Holdings, fetchTrading212Orders, fetchTrading212Dividends, syncTrading212History, applyTrading212Answer, applyTrading212NightPrice, stripClosedFromPositions } from '../portfolio/trading212.js';
 import { applyFillLedgers, dividendEventsByTicker, fillCurrencyConflicts, withClosedFromFills, withDividendCosts } from '../portfolio/t212_fills.js';
-import { boardStrategiesOf, fetchBoardStrategies, withBoardStrategies } from '../portfolio/board_strategies.js';
+import { boardStrategiesOf, fetchBoardStrategies, preloadTickers, withBoardStrategies } from '../portfolio/board_strategies.js';
 import { fetchOvernightSeries } from '../prices/overnight_intraday.js';
 
 // The last resort: a render-time crash no surface's own boundary caught (one in the board's own frame) shows a readable
@@ -999,11 +999,13 @@ function Board({ isReadOnly, agents = false }) {
     // The dividends, cached like the fills; not awaited with the prices, so
     // a slow read never holds the board.
     fetchTrading212Dividends().then(takeDividends);
-    // The board's private-module holdings, the same way: a failed read keeps the last ones.
-    fetchBoardStrategies().then((list) => {
-      if (!list) return;
+    // The board's private-module holdings, the same way: a failed read keeps the last ones. Kept as a promise for the preload below,
+    // which waits on it only when the board had none kept (a first visit): their charts are preloaded on that load too.
+    const strategiesRead = fetchBoardStrategies().then((list) => {
+      if (!list) return null;
       setBoardStrategies(list);
       Storage.saveBoardStrategies(list);
+      return list;
     });
     const t212OrderRows = Array.isArray(t212OrderRead?.rows) ? t212OrderRead.rows : [];
     setT212Orders(t212OrderRows);
@@ -1216,10 +1218,13 @@ function Board({ isReadOnly, agents = false }) {
       // (5 m / 30 m / 1 h / 12 h) mean those would refetch with nothing
       // fresh to show.
       if (shouldPrefetch) {
+        // With the board's private-module holdings, whose charts the `chart` function serves as any ticker's
+        // (Davies, 2026-11-07: "每次进入网页两个quotes的页面也都加入预加载中"). With none kept yet (a first visit, or a week away) the
+        // preload waits for this load's read of them, so a click on their card opens a drawn chart on that visit too.
+        const kept = (boardStrategies ?? []).length > 0;
+        Promise.resolve(kept ? boardStrategies : strategiesRead).then((strategies) => {
         const phaseNow = usMarketPhase(new Date());
-        // With the board's private-module holdings, whose charts the `chart` function serves as any ticker's.
-        const tickerList = [...Object.keys(portfolio?.holdings || {})
-          .filter((t) => t !== "CASH" && !portfolio.holdings[t]?.isCash), ...(boardStrategies ?? []).map((s) => s.ticker)];
+        const tickerList = preloadTickers(portfolio?.holdings, strategies ?? boardStrategies);
         const sp = (extendedHours && phaseNow !== "regular") ? "ES=F" : "^GSPC";
         prefetchAllChartData({
           tickers: tickerList,
@@ -1244,6 +1249,7 @@ function Board({ isReadOnly, agents = false }) {
             phase: phaseNow,
           });
         }
+        });
       }
     }
     if (src === "error") {

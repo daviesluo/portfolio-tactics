@@ -24,6 +24,15 @@ export function withBoardStrategies(portfolio, _strategies) {
 }
 
 /**
+ * The tickers the board's load preloads: the book's holdings less cash, none added here.
+ * @param {Record<string, any> | null | undefined} holdings @param {any[] | null | undefined} _strategies
+ * @returns {string[]}
+ */
+export function preloadTickers(holdings, _strategies) {
+  return Object.keys(holdings || {}).filter((t) => t !== 'CASH' && !holdings?.[t]?.isCash);
+}
+
+/**
  * A holding's money as its cards would show it. Never called here, as no holding is one; it reads its value as any card does.
  * @param {{ shares: number, lastPrice: number }} h @param {number} fx
  */
