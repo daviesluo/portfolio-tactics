@@ -147,7 +147,7 @@ import { extPriceIsRealAh } from '../charts/indicators.js';
 import { isStrategyHolding, isUsEquity } from '../prices/ticker_class.js';
 import { fetchTrading212Holdings, fetchTrading212Orders, fetchTrading212Dividends, syncTrading212History, applyTrading212Answer, applyTrading212NightPrice, stripClosedFromPositions } from '../portfolio/trading212.js';
 import { applyFillLedgers, dividendEventsByTicker, fillCurrencyConflicts, withClosedFromFills, withDividendCosts } from '../portfolio/t212_fills.js';
-import { boardStrategiesOf, fetchBoardStrategies, preloadTickers, withBoardStrategies } from '../portfolio/board_strategies.js';
+import { boardStrategiesOf, fetchBoardStrategies, preloadTickers, withBoardStrategies, withoutBoardStrategies } from '../portfolio/board_strategies.js';
 import { fetchOvernightSeries } from '../prices/overnight_intraday.js';
 
 // The last resort: a render-time crash no surface's own boundary caught (one in the board's own frame) shows a readable
@@ -1906,7 +1906,9 @@ function Board({ isReadOnly, agents = false }) {
         <ModalBoundary name="transaction-history" title="Transaction history" onClose={() => setShowTransactionHistory(false)}>
           <React.Suspense fallback={<ModalFrame title="Transaction history" onClose={() => setShowTransactionHistory(false)} />}>
             <TransactionHistoryModal
-              holdings={shownPortfolio.holdings}
+              // Without a private slot and B (Davies, 2026-11-07: "…但不用加到transaction历史表格里"): their lots are deposits bought at
+              // their NAV, the board's bookkeeping for their units, not trades.
+              holdings={withoutBoardStrategies(shownPortfolio.holdings)}
               marketData={marketData}
               marketDataReady={marketDataReady}
               hideValues={hideValues}

@@ -33,6 +33,16 @@ export function preloadTickers(holdings, _strategies) {
 }
 
 /**
+ * The holdings the Transaction history lists: all of them, as none is one of those holdings here.
+ * @template H
+ * @param {H} holdings
+ * @returns {H}
+ */
+export function withoutBoardStrategies(holdings) {
+  return holdings;
+}
+
+/**
  * A holding's money as its cards would show it. Never called here, as no holding is one; it reads its value as any card does.
  * @param {{ shares: number, lastPrice: number }} h @param {number} fx
  */
