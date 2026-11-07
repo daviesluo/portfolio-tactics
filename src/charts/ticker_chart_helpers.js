@@ -7,6 +7,7 @@
 
 import { fmtPrice as fmtPr } from '../app/formatters.js';
 import { ChartStore } from '../prices/chart_store.js';
+import { BOARD_STRATEGIES } from '../portfolio/board_strategies.js';
 
 export const SYMBOL_BY_CUR = { USD: '$', GBP: '£', CNY: '¥', HKD: 'HK$', EUR: '€' };
 
@@ -30,7 +31,8 @@ export const NIGHT_BAR_INTERVAL_MS = { '1D': 5 * 60_000, '1W': 15 * 60_000, '1M'
 // the holdings shape; indices/futures/forex/yields all have ASCII
 // tickers that mean nothing to a human and benefit from a label.
 export const TICKER_DISPLAY_NAMES = {
-  // The board's private-module holdings (portfolio/board_strategies.js): their slots' names.
+  // The board's slots fed by a private module: the names portfolio/board_strategies.js gives them.
+  ...Object.fromEntries(BOARD_STRATEGIES.map((s) => [s.ticker, s.name])),
   '^GSPC':    'S&P 500',
   '^NDX':     'NASDAQ 100',
   '^RUT':     'Russell 2000',

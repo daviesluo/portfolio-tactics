@@ -4,6 +4,8 @@
 // funds in its "daily-only" check). All predicates here are pure and
 // case-insensitive where the underlying convention permits.
 
+import { isBoardStrategy } from '../portfolio/board_strategies.js';
+
 /** @param {string} ticker */ export const isCrypto    = (ticker) => /-USD$/i.test(ticker);
 /** @param {string} ticker */ export const isFutures   = (ticker) => /=F$/.test(ticker);
 /** @param {string} ticker */ export const isForex     = (ticker) => /=X$/.test(ticker);
@@ -12,11 +14,11 @@
 /** @param {string} ticker */ export const isCnFund    = (ticker) => /^\d{6}$/.test(ticker);
 /** @param {string} ticker */ export const isPvt       = (ticker) => /\.PVT$/i.test(ticker);
 /**
- * The board's private-module holdings (portfolio/board_strategies.js): no listing, valued from their own
+ * The board's slots fed by a private module (portfolio/board_strategies.js names them): no listing, valued from their own
  * marks round the clock, in pounds. Not a US equity, not a fund with one NAV a day.
  * @param {string} ticker
  */
-export const isStrategyHolding = (ticker) => /(?!)/.test(ticker || '');
+export const isStrategyHolding = (ticker) => isBoardStrategy(ticker);
 
 /**
  * Continental-European exchange listings (Yahoo suffixes) — the euro-zone
