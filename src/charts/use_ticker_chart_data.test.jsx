@@ -96,6 +96,34 @@ describe('useTickerChartData — a private-module holding opens from its preload
   });
 });
 
+// A range switch's first render, before the effect hands over the new range's rows, draws the new range's cached rows, not the
+// previous range's: for a private-module holding's 1D, whose window keeps only today's points, the previous range's daily rows read
+// as an empty "No data" chart, and under load that render was painted (the browser sweep, 2026-11-07).
+describe('useTickerChartData — a range switch draws the new range from its first render', () => {
+  it('every render at 1D returns the 1D rows, from the first one after the switch', async () => {
+    fetchHistoricalBatch.mockResolvedValue({});
+    const DAYS = [{ date: '2025-11-07', close: 1 }, { date: '2026-11-06', close: 1.18 }];
+    const TODAY = [{ date: '2026-11-07T00:00', close: 1.18 }, { date: '2026-11-07T00:05', close: 1.2 }];
+    chartMem.set(tickerChartCacheKey('NVDA', '1Y', false, 'regular'), { ts: Date.now(), data: DAYS });
+    chartMem.set(tickerChartCacheKey('NVDA', '1D', false, 'regular'), { ts: Date.now(), data: TODAY });
+    /** @type {Array<{ rk: string, series: any }>} */
+    const renders = [];
+    const { rerender } = renderHook((/** @type {{ rk: string }} */ p) => {
+      const r = useTickerChartData(ARGS({ rangeKey: p.rk, visibleRangeKeys: ['1D', '1Y'] }));
+      renders.push({ rk: p.rk, series: r.series });
+      return r;
+    }, { initialProps: { rk: '1Y' } });
+    await act(async () => { await Promise.resolve(); });
+    expect(renders.at(-1)?.series).toEqual(DAYS);
+    const from = renders.length;
+    rerender({ rk: '1D' });
+    await act(async () => { await Promise.resolve(); });
+    const after = renders.slice(from);
+    expect(after.length).toBeGreaterThan(0);
+    for (const r of after) expect(r.series).toEqual(TODAY);
+  });
+});
+
 describe('useTickerChartData — the 1D poll stops when there is nothing to watch', () => {
   const warm = (ticker = 'NVDA', phase = 'regular') => {
     chartMem.set(tickerChartCacheKey(ticker, '1D', false, phase), { ts: Date.now(), data: BARS });

@@ -54,6 +54,11 @@ export function useTickerChartData({
     /** @type {Array<{date:string,close:number,volume?:number}>|null} */
     (initialCached ? initialCached.data : null),
   );
+  // The cache key `series` was set for. A range switch renders once before the effect below hands `series` the new range's
+  // rows: that render reads the new range's rows from the cache itself (the return below), so it never draws the previous
+  // range's line, or, for a private-module holding's 1D (whose window keeps only today's points), an empty "No data" chart. Under
+  // load that render was painted (the browser sweep's strategies/ranges-preloaded, 2026-11-07).
+  const seriesKeyRef = React.useRef(initialCached ? initialCacheKey : null);
   const [loading, setLoading] = React.useState(!initialCached);
   const [error, setError] = React.useState(false);
   // Distinct from `error`: the legitimate "no positive trailing P/E to
@@ -102,6 +107,7 @@ export function useTickerChartData({
 
     let needsFresh = !cached;
     if (cached && Array.isArray(cached.data) && cached.data.length >= 2) {
+      seriesKeyRef.current = cacheKey;
       setSeries(cached.data);
       setLoading(false);
       setError(false);
@@ -181,6 +187,7 @@ export function useTickerChartData({
           if (!cached) {
             setNoPe(true);
             setError(false);
+            seriesKeyRef.current = cacheKey;
             setSeries([]);
             setLoading(false);
           }
@@ -189,6 +196,7 @@ export function useTickerChartData({
         data = priceDividedByTtmEps(data, isPe ? row.ttmEpsHistory : row.ttmSalesHistory, denom);
       }
       modalCacheSet(cacheKey, data);
+      seriesKeyRef.current = cacheKey;
       setSeries(data);
       setLoading(false);
       setError(false);
@@ -322,6 +330,7 @@ export function useTickerChartData({
           data = applyChartWindow(data, rangeKey, params.variant);
           const cacheKey = `${ticker}|${rangeKey}|${useExt ? 'ext' : 'reg'}|${phase || ''}`;
           modalCacheSet(cacheKey, data);
+          seriesKeyRef.current = cacheKey;
           setSeries(data);
         }
       } catch { /* keep prior data on screen */ }
@@ -349,5 +358,13 @@ export function useTickerChartData({
     return () => window.removeEventListener(OVERNIGHT_FETCH_EVENT, read);
   }, [ticker, phase, extendedHours]);
 
-  return { series, loading, error, noPe, maHistory, overnightPts };
+  // The rows of the range on screen: `series` once it is this range's, else this range's cached rows (a range switch's first
+  // render, see `seriesKeyRef`), else `series` as it is until the effect has fetched.
+  const keyNow = tickerChartCacheKey(ticker, rangeKey, useExt, phase);
+  let shown = series;
+  if (seriesKeyRef.current !== keyNow) {
+    const row = modalCacheGet(keyNow);
+    if (row && Array.isArray(row.data) && row.data.length >= 2) shown = row.data;
+  }
+  return { series: shown, loading, error, noPe, maHistory, overnightPts };
 }
