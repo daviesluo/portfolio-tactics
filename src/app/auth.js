@@ -23,6 +23,7 @@
 // Edge Function — the client just relays its 401 / 429 verdicts.
 import { SB_ANON, EDGE_AUTH_URL } from './supabase_config.js';
 import { reportError } from './ops_error.js';
+import { Storage } from './storage.js';
 
 const APP_TOKEN_KEY = "dp.token"; // sessionStorage — wiped on tab close
 
@@ -59,9 +60,28 @@ export async function openGateSession(site) {
   } catch { return false; }
 }
 
+/**
+ * The service worker's cache of data answers (vite.config.js `runtimeCaching`, `data-api`): the signed-out session's,
+ * so it goes with it. The Agents page's answers are kept out of it in the first place.
+ */
+export const DATA_CACHE = 'data-api';
+
+/**
+ * What this browser keeps of the session that signs out (2026-11-07, the audit): the Agents page's kept copy
+ * (dp.agentsCache), which only a viewer's load used to drop, and the service worker's data cache, which held every
+ * GET the admin's page made. Best-effort: a browser without Cache Storage, or one that refuses it, loses nothing else.
+ */
+export function forgetSessionCopies() {
+  Storage.dropAgentsCache();
+  try {
+    if (typeof caches !== 'undefined' && typeof caches.delete === 'function') caches.delete(DATA_CACHE).catch(() => {});
+  } catch { /* Cache Storage refused */ }
+}
+
 /** Forget the token and tell the app, which shows the password form. The next 401 finds no token and does nothing. */
 export function signOut() {
   setAppToken("");
+  forgetSessionCopies();
   // The gate's session goes with it: a signed-out browser is sent nothing of the app again.
   if (gateIsHere()) fetch('/__session', { method: 'DELETE' }).catch(() => {});
   for (const fn of [...signOutListeners]) {

@@ -3,7 +3,7 @@
 // 内容"), admin-* for a page the viewer cannot open ("还有交易记录等不对访客开放的内容"). The service worker's precache
 // leaves both out, the viewer's board never warms them, and the site's gate serves them by role.
 
-/** A module of the Agents page (<private>/), by its resolved path on any platform. */
+/** A module of the Agents page (its own folder), by its resolved path on any platform. */
 export const AGENTS_DIR_RE = /[\\/]src[\\/]agents[\\/]/;
 /**
  * The pages a read-only viewer cannot open (app.jsx: each is shown only `!isReadOnly`), by their modules: the

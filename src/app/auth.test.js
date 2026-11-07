@@ -105,6 +105,24 @@ describe('signOut / noteAuthStatus', () => {
     expect(seen).toEqual([1, 3]);
   });
 
+  // 2026-11-07, the audit: the Agents page's kept copy and the service worker's data cache outlived the admin's session.
+  it("drops the Agents page's kept copy and the service worker's data cache, and a browser without either signs out all the same", async () => {
+    const local = new Map([['dp.agentsCache', '{"ts":1}'], ['dp.portfolio', 'kept']]);
+    vi.stubGlobal('localStorage', { getItem: (k) => local.get(k) ?? null, setItem: (k, v) => { local.set(k, String(v)); }, removeItem: (k) => { local.delete(k); } });
+    const deleted = [];
+    vi.stubGlobal('caches', { delete: async (n) => { deleted.push(n); return true; } });
+    setAppToken('a.b');
+    signOut();
+    expect([...local.keys()]).toEqual(['dp.portfolio']);
+    expect(deleted).toEqual(['data-api']);
+    vi.stubGlobal('caches', { delete: async () => { throw new Error('refused'); } });
+    vi.stubGlobal('localStorage', { removeItem: () => { throw new Error('refused'); } });
+    setAppToken('a.b');
+    expect(() => signOut()).not.toThrow();
+    expect(getAppToken()).toBe('');
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
   it('a 401 to a token this browser holds signs out; a 403, a 500, a 200 or no token does not', () => {
     setAppToken('a.b');
     const seen = [];
