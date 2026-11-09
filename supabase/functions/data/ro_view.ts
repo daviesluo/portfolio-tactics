@@ -108,8 +108,11 @@ export function keptTickers(board: unknown): Set<string> {
   for (const [t, h] of Object.entries(holdings)) {
     if (!isObj(h)) continue;
     if (h.isCash === true || t === "CASH") kept.add(t);
+    // A synced holding off the board keeps its slot's key to go back there if it is bought again (stripClosedFromPositions); while
+    // it is closed it is NOT kept: a sold-out holding reaches a viewer only aliased (`soldAliases`), never by name. Until
+    // 2026-11-09 the key alone kept it, so every holding sold out at Trading 212 went to the viewer by name with its lots and sales.
     const slot = h.t212PositionKey;
-    if (typeof slot === "string" && Object.prototype.hasOwnProperty.call(positions, slot)) kept.add(t);
+    if (typeof slot === "string" && h.closed !== true && Object.prototype.hasOwnProperty.call(positions, slot)) kept.add(t);
   }
   return kept;
 }

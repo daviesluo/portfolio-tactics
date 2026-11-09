@@ -50,7 +50,7 @@ function board() {
       // Closed for good: not sent.
       GONE: { shares: 0, cost: 0, closed: true, currency: "USD", lastPrice: 7,
         lots: [{ date: "2025-02-01", shares: 3, cost: 4 }], sells: [{ date: "2025-04-01", shares: 3, price: 6 }] },
-      // Closed, but Trading 212 can put it back on ST: sent, its round trip folded to nothing.
+      // Closed, with the slot Trading 212 would put it back on: never sent by name (2026-11-09), and sold before the cutoff: not at all.
       ZETA: { shares: 0, cost: 0, closed: true, currency: "USD", lastPrice: 9, t212Shares: 0, t212Cost: 0, t212PositionKey: "ST",
         lots: [{ date: "2025-02-01", shares: 2, cost: 4 }], sells: [{ date: "2025-04-01", shares: 2, price: 5 }] },
     },
@@ -68,7 +68,7 @@ Deno.test("roCutoff: two weeks before the earlier of 1 January (of the year two 
 });
 
 Deno.test("keptTickers: what a position names, the cash, and a holding Trading 212 can put back on its slot", () => {
-  assertEquals([...keptTickers(board())].sort(), ["ACME", "CASH", "NOVA", "ZETA"]);
+  assertEquals([...keptTickers(board())].sort(), ["ACME", "CASH", "NOVA"]);   // ZETA is closed: its slot key no longer keeps it (2026-11-09)
   assertEquals(keptTickers(null).size, 0);
 });
 
@@ -76,10 +76,10 @@ Deno.test("roBoard: exactly these keys at every level; nothing else of the board
   const ro = roBoard(board(), NOW) as any;
   assertEquals(Object.keys(ro).sort(), ["holdings", "positions"]);
   assertEquals(keysOf(Object.values(ro.positions)), ["label", "role", "subtitle", "tickers"]);
-  assertEquals(Object.keys(ro.holdings).sort(), ["ACME", "CASH", "NOVA", "ZETA"]);
+  assertEquals(Object.keys(ro.holdings).sort(), ["ACME", "CASH", "NOVA"]);
   assertEquals(keysOf(Object.values(ro.holdings)), [
-    "closed", "cost", "currency", "dayPct", "extDayPct", "extPrice", "extPriceTrusted", "isCash", "lastPrice", "lots",
-    "prevClose", "sells", "shares", "t212Cost", "t212PositionKey", "t212Shares",
+    "cost", "currency", "dayPct", "extDayPct", "extPrice", "extPriceTrusted", "isCash", "lastPrice", "lots",
+    "prevClose", "sells", "shares", "t212Cost", "t212Shares",
   ]);
   const lots = Object.values(ro.holdings).flatMap((h: any) => h.lots ?? []);
   const sells = Object.values(ro.holdings).flatMap((h: any) => h.sells ?? []);
@@ -99,10 +99,20 @@ Deno.test("roBoard: a synced ledger folded to one opening row and one row a day,
   assertEquals(ro.holdings.ACME.sells, [{ date: "2026-05-01", shares: 1, price: 26 }]);
   // A holding not synced keeps its dates and costs; only `ts` goes.
   assertEquals(ro.holdings.NOVA.lots, [{ date: "2025-01-02", shares: 4, cost: 5 }]);
-  // A round trip before the cutoff: no shares, net cash 8 − 10 = −2, as a buy of one at 1 and a sale of one at 3, so
-  // its ledger still exists (the settle check and the rebuild ask whether it does).
-  assertEquals(ro.holdings.ZETA.lots, [{ date: "2025-12-17", shares: 1, cost: 1 }]);
-  assertEquals(ro.holdings.ZETA.sells, [{ date: "2025-12-17", shares: 1, price: 3 }]);
+  // A closed holding sold out before the cutoff adds nothing to any window and is not sent, slot key or not.
+  assertEquals(ro.holdings.ZETA, undefined);
+});
+
+Deno.test("roBoard: a holding sold out at Trading 212 inside the window reaches a viewer by its alias only, never by name (2026-11-09)", () => {
+  // The live leak: a synced holding off the board keeps `t212PositionKey`, and that key alone used to keep it, so KO-like
+  // holdings went to every viewer by name with their lots and sales beside their aliases.
+  const b = board() as any;
+  b.holdings.ZETA = { ...b.holdings.ZETA, lots: [{ date: "2026-02-01", shares: 2, cost: 4 }], sells: [{ date: "2026-05-01", shares: 2, price: 5 }] };
+  const ro = roBoard(b, NOW, [{ ticker: "ZETA", alias: "ZABCDEFG", k: 2 }]) as any;
+  assertEquals(ro.holdings.ZETA, undefined);
+  assertEquals(JSON.stringify(ro).includes("ZETA"), false);
+  assertEquals(ro.holdings.ZABCDEFG.closed, true);
+  assertEquals(ro.holdings.ZABCDEFG.lots, [{ date: "2026-02-01", shares: 1, cost: 8 }]);
 });
 
 Deno.test("netRows: the net shares and the net cash, every price positive", () => {
