@@ -89,7 +89,7 @@ export function buildTargetRows(metrics, data, nowMs) {
   const players = new Map();
   for (const pos of Object.values(metrics?.positions || {})) for (const p of (/** @type {any} */ (pos).players || [])) players.set(p.ticker, p);
   const snaps = data?.rows || {};
-  // Key risks: the ones the GET serves (the hand-targets branch's, Grok keeps them, hand.ts; else the function's baked
+  // Key risks: the ones the GET serves (the hand-targets branch's, kept by hand, hand.ts; else the function's baked
   // copy). None served, none shown. A dated note drops out after its day (risksFor).
   const riskMap = risksFromServed(/** @type {any} */ (data)?.risks?.risks) ?? {};
   return holdings.map((h) => {
