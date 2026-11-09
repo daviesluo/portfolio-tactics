@@ -180,7 +180,8 @@ describe('the read-only book gives the page the same figures as the whole book',
     const aliases = SOLD.map((x) => x.alias).sort();
     expect(SOLD.map((x) => x.ticker)).toEqual(['GONE', 'WANE']);                 // QUIT: before the cutoff, not sent
     expect(aliases.every(ro.isSoldAlias)).toBe(true);
-    expect(Object.keys(v.data.holdings).sort()).toEqual(['ACME', 'BOLT', 'BRIT.L', 'CASH', 'NOVA', 'ZETA', ...aliases].sort());
+    expect(Object.keys(v.data.holdings).sort()).toEqual(['ACME', 'BOLT', 'BRIT.L', 'CASH', 'NOVA', ...aliases].sort());
+    // ZETA (closed at Trading 212, its slot key kept, sold before the cutoff) is not sent at all since 2026-11-09: the key alone sent it by name.
     // No sold-out holding's name, anywhere in anything the viewer is sent; nor one of its own prices or costs.
     const sent = JSON.stringify(v);
     for (const name of ['GONE', 'WANE', 'QUIT']) expect(sent.includes(name)).toBe(false);
