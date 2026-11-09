@@ -575,7 +575,14 @@ const LIVE_COVERAGE_MIN = 0.5;
  * @param {{ confirm?: Record<string, QuoteSource> }} [opts]
  */
 export async function refreshPrices(portfolio, { confirm = {} } = {}) {
-  const tickers = Object.keys(portfolio.holdings);
+  // A holding closed out, no shares left, has no quote to check: it counts in the performance panel only until its
+  // last sale, valued from its bars. Asking for one asked about every holding ever sold on every tick, and a read-only
+  // page, which knows such a holding by an alias no market lists (supabase/functions/data/ro_view.ts), would have sent
+  // each through the CORS proxies as a miss.
+  const tickers = Object.keys(portfolio.holdings).filter((t) => {
+    const h = portfolio.holdings[t];
+    return !(h?.closed && !(Number(h?.shares) > 0));
+  });
   const { out: result, sources, alt } = await fetchYahooSourced(tickers, confirm);
   if (!result || Object.keys(result).length === 0) {
     return { updates: {}, source: "error", coverage: { got: 0, wanted: 0 }, sources, alt };

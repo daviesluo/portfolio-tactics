@@ -4,7 +4,7 @@
 // implementation.
 import { describe, it, expect } from 'vitest';
 import {
-  buildTickerSeries, closeOn, ledgerFor, computeAt, ytdPct,
+  buildTickerSeries, closeOn, ledgerFor, computeAt, ytdPct, bookScope,
   fetchParamsFor, maFetchParamsFor, RANGES, RANGE_KEYS, MODAL_RANGE_KEYS, modalRangeKey,
   applyVariantFilter, windowSinceLastUsClose, windowBetweenLastTwoUsCloses,
   filterToLastHours, filterToLast24h, fillVenueSessionGrid, resampleToSlots,
@@ -331,6 +331,64 @@ describe('computeAt — board scope (only positioned holdings count, like the sc
     expect(r.basis).toBeCloseTo(1000, 4);
     expect(r.value).toBeCloseTo(1100, 4);
     expect(ytdPct(r)).toBeCloseTo(10, 6);
+  });
+});
+
+describe('bookScope — the board, plus what was sold out of it with its ledger', () => {
+  const lot = (shares) => [{ date: '2026-01-05', shares, cost: 10 }];
+  const sale = (shares) => [{ date: '2026-03-10', shares, price: 12 }];
+  const book = {
+    positions: { P: { tickers: ['ON', 'CASH'] } },
+    holdings: {
+      ON: { shares: 5, lots: lot(5) },
+      CASH: { isCash: true, lastPrice: 100 },
+      SOLD: { shares: 0, closed: true, lots: lot(5), sells: sale(5) },          // in
+      ORPHAN: { shares: 5, lots: lot(5) },                                     // an edit's orphan: out
+      HALF: { shares: 0, closed: true, lots: lot(5), sells: sale(3) },         // nets to 2, not 0: out
+      BARE: { shares: 0, closed: true },                                       // no ledger: out
+    },
+  };
+
+  it('counts a closed holding whose ledger nets to zero, and nothing else off the board', () => {
+    expect([...(bookScope(book) || [])].sort()).toEqual(['CASH', 'ON', 'SOLD']);
+  });
+
+  it('is exactly the board when nothing was sold out', () => {
+    const { SOLD, HALF, BARE, ...rest } = book.holdings;
+    expect([...(bookScope({ ...book, holdings: rest }) || [])].sort()).toEqual(['CASH', 'ON']);
+  });
+
+  it('is null (every holding) when there are no positions, as the unit fixtures need', () => {
+    expect(bookScope({ holdings: book.holdings })).toBeNull();
+  });
+
+  it('the line carries a sold holding\'s move up to its sale, and nothing after it', () => {
+    // KEEP [•] flat at [•]; OLD [•] enter the window at [•] and are sold at
+    // [•] inside it. The book made [•] × [•] = [•] and the line counts it:
+    // the sale takes its [•] out of the basis as any sale inside a
+    // window does (`computeAt — sales`), leaving [•] of value on [•].
+    // Before [•]-[•]-[•] OLD was left out: [•] on [•] [•] %.
+    const ts = buildTickerSeries({
+      KEEP: [{ date: '2026-03-02', close: 50 }, { date: '2026-04-01', close: 50 }],
+      OLD: [{ date: '2026-03-02', close: 100 }, { date: '2026-03-10', close: 120 }],
+    }, '2026-03-02', '1M');
+    const portfolio = {
+      positions: { P: { tickers: ['KEEP'] } },
+      holdings: {
+        KEEP: { shares: 10, lastPrice: 50, lots: [{ date: '2026-01-05', shares: 10, cost: 40 }] },
+        OLD: { shares: 0, closed: true, lastPrice: 120, lots: [{ date: '2026-01-05', shares: 10, cost: 90 }],
+          sells: [{ date: '2026-03-10', shares: 10, price: 120 }] },
+      },
+    };
+    const at = (date, tickerSeries = ts) => computeAt({ ...baseOpts, date, portfolio, tickerSeries, yearStart: '2026-03-02',
+      yearStartDate: '2026-03-02', todayMs: Date.parse('2026-04-01'), liveAnchorDate: '' });
+    expect(at('2026-03-02')).toEqual({ value: 1500, basis: 1500 });
+    expect(at('2026-03-09')).toEqual({ value: 1500, basis: 1500 });  // OLD's 100 carried to the 9th
+    expect(at('2026-04-01')).toEqual({ value: 500, basis: 300 });   // 1,500 − the 1,200 it was sold for
+    expect(ytdPct(at('2026-04-01'))).toBeCloseTo(66.6667, 3);      // (500 − 300) / 300
+    // With no price history for OLD at all it is left out, not priced from its rows: 500 on 500.
+    const { OLD, ...noOld } = ts;
+    expect(at('2026-04-01', noOld)).toEqual({ value: 500, basis: 500 });
   });
 });
 

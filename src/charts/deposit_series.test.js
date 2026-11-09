@@ -7,6 +7,7 @@ import {
   depositAt, depositSeries, depositLedgerFor, frozenFxRate,
   freezeDepositFxRates, missingDepositFxCurrencies, ledgerEventIsAfter, t212FillsFor,
 } from './deposit_series.js';
+import { buildTickerSeries, computeAt, ytdPct } from './ytd.js';
 
 const USD_ONLY = { USD: 1 };
 
@@ -279,5 +280,96 @@ describe('deposit — an incomplete lot ledger still reconciles to the board', (
       positions: { P: { tickers: ['X'] } },
     };
     expect(depositAt({ portfolio: over, date: '2026-06-01', fxRates: USD_ONLY })).toBeCloseTo(90, 6);
+  });
+});
+
+describe('a rotation is money moved, not money paid in (Davies, 2026-11-09)', () => {
+  // "似乎是把我换仓时卖了的钱再买别的股票时当成新deposit的钱了": selling one
+  // holding out in full and buying another with the money stepped
+  // Deposited up by the buy, because the sold-out holding (`closed`, off
+  // every position, its ledger kept) was left out of the book entirely —
+  // its sale never came off. The value line had the same hole: the sold
+  // holding's worth was missing before the sale, so the buy stepped Value
+  // up too. Made-up numbers, every expected figure by hand:
+  //
+  //   KEEP  [•] @ [•] on [•]-[•] +[•] @ [•] on [•]-[•] (a REAL deposit), worth [•]
+  //   OLD   [•] @ [•] on [•]-[•] all [•] sold @ [•] on [•]-[•] (closed), worth [•]
+  //   NEW   [•] @ [•] on [•]-[•] paid for with OLD's [•] worth [•]
+  //
+  //   Deposited  [•]-[•]: [•] + [•]                  = [•]
+  //              [•]-[•]: [•] + ([•] − [•]) + [•]  = [•]   flat
+  //              [•]-[•]: [•] + [•] × [•]               = [•]   the deposit
+  //   Value      [•]-[•]: [•] × [•] + [•] × [•]          = [•]
+  //              [•]-[•]: [•] × [•] + [•] × [•]          = [•]   flat
+  //              [•]-[•]: [•] × [•] + [•] × [•]          = [•]
+  const portfolio = {
+    holdings: {
+      KEEP: { shares: 15, cost: 50, lastPrice: 50, currency: 'USD',
+        lots: [{ date: '2026-01-05', shares: 10, cost: 50 }, { date: '2026-04-01', shares: 5, cost: 50 }] },
+      OLD: { shares: 0, cost: 0, lastPrice: 120, currency: 'USD', closed: true,
+        lots: [{ date: '2026-01-05', shares: 10, cost: 100 }],
+        sells: [{ date: '2026-03-10', shares: 10, price: 120 }] },
+      NEW: { shares: 12, cost: 100, lastPrice: 100, currency: 'USD',
+        lots: [{ date: '2026-03-10', shares: 12, cost: 100 }] },
+    },
+    positions: { P: { tickers: ['KEEP', 'NEW'] } },   // OLD sold out: on no position
+  };
+  const dates = ['2026-03-09', '2026-03-10', '2026-04-01'];
+  const tickerSeries = buildTickerSeries({
+    KEEP: [{ date: '2026-01-02', close: 50 }, { date: '2026-04-01', close: 50 }],
+    OLD:  [{ date: '2026-01-02', close: 100 }, { date: '2026-03-09', close: 120 }, { date: '2026-03-10', close: 120 }],
+    NEW:  [{ date: '2026-03-10', close: 100 }, { date: '2026-04-01', close: 100 }],
+  }, '2026-03-09', '3M');
+  // Value: `computeAt` over the same book, sold-out holdings included (the vs-S&P line's own series).
+  const valueAt = (date) => computeAt({
+    date, portfolio, tickerSeries, marketData: {}, yearStart: '2026-03-09', yearStartDate: '2026-03-09',
+    todayMs: Date.parse('2026-04-01'), liveAnchorDate: '', useExt: false, fxToUSD: () => 1,
+  });
+
+  it('Deposited is flat across the rotation and steps on the real deposit', () => {
+    const line = depositSeries({ portfolio, dates, fxRates: USD_ONLY });
+    expect(line?.map((p) => p.v)).toEqual([1500, 1500, 1750]);
+  });
+
+  it('Value is flat across the rotation too, so the gap between the lines is the gain', () => {
+    expect(dates.map((d) => valueAt(d).value)).toEqual([1700, 1700, 1950]);
+    // 200 = OLD's 10 × (120 − 100), the same before the rotation and after it.
+    const line = depositSeries({ portfolio, dates, fxRates: USD_ONLY }) || [];
+    expect(dates.map((d, i) => valueAt(d).value - line[i].v)).toEqual([200, 200, 200]);
+  });
+
+  it('the vs-S&P line does not move across the rotation: no gain is made by moving money', () => {
+    // Basis at the 03-09 anchor: KEEP 10 × 50 and OLD 10 at its pre-window close 100 = 1500, against
+    // 1700 of value (OLD at 120): +13.33 %. 03-10: OLD's 1,200 comes out of the basis, NEW's 1,200 goes
+    // in: still 1700 on 1500. The chart draws each point less the first, so 0 then 0.
+    const pct = dates.slice(0, 2).map((d) => ytdPct(valueAt(d)));
+    expect(pct[0]).toBeCloseTo(13.3333, 3);
+    expect(pct[1] - pct[0]).toBe(0);
+  });
+
+  it('the right edge is the board alone: a closed ledger nets to nothing from its last sale on', () => {
+    const board = { ...portfolio, holdings: { KEEP: portfolio.holdings.KEEP, NEW: portfolio.holdings.NEW } };
+    const edge = computeAt({
+      date: '2026-04-01', portfolio: board, tickerSeries, marketData: {}, yearStart: '2026-03-09', yearStartDate: '2026-03-09',
+      todayMs: Date.parse('2026-04-01'), liveAnchorDate: '', useExt: false, fxToUSD: () => 1,
+    });
+    expect(valueAt('2026-04-01').value).toBe(edge.value);
+    expect(depositAt({ portfolio, date: '2026-04-01', fxRates: USD_ONLY })).toBe(1750);
+  });
+
+  it('a holding deleted from the book adds nothing, though the broker\'s fills for it remain', () => {
+    // DROP is in no holding at all (deleted outright, not closed): its fills in `t212_orders` are not the book's.
+    const orders = [
+      { ticker: 'DROP', side: 'buy', shares: 4, price: 25, executed_at: '2026-03-01T14:30:00Z' },
+      { ticker: 'DROP', side: 'sell', shares: 1, price: 30, executed_at: '2026-03-20T14:30:00Z' },
+    ];
+    expect(depositSeries({ portfolio, dates, fxRates: USD_ONLY, t212Orders: orders })?.map((p) => p.v)).toEqual([1500, 1500, 1750]);
+    expect(dates.map((d) => valueAt(d).value)).toEqual([1700, 1700, 1950]);
+  });
+
+  it('a holding off the board that is not closed is still an orphan, left out of both', () => {
+    const orphan = { ...portfolio, holdings: { ...portfolio.holdings, OLD: { ...portfolio.holdings.OLD, closed: undefined } } };
+    // Without OLD: 500 then 500 + 1200, as the scoreboard's scope says for an orphan of an edit.
+    expect(depositSeries({ portfolio: orphan, dates, fxRates: USD_ONLY })?.map((p) => p.v)).toEqual([500, 1700, 1950]);
   });
 });

@@ -122,3 +122,24 @@ Deno.test("paginateRows: tolerates a non-array response (treats as end of pages)
   });
   assertEquals(out, []);
 });
+
+// A read-only page knows a sold-out holding by its alias (../data/ro_view.ts `soldAliases`), never by name.
+Deno.test("handle: a read-only alias reads its holding's points, priced in the alias's units; an admin's list is as sent", async () => {
+  const reads: string[][] = [];
+  const deps = (role: string) => ({
+    verify: async () => ({ role }),
+    read: async (tickers: string[]) => {
+      reads.push(tickers);
+      return tickers.includes("OLDCO") ? [{ ticker: "OLDCO", bucket_time: "2026-05-29T01:00:00.000Z", price: "40" }] : [];
+    },
+    aliases: async () => [{ ticker: "OLDCO", alias: "ZABCDEFG", k: 0.25 }],
+    now: Date.parse("2026-05-29T02:00:00Z"),
+  });
+  const get = (q: string) => new Request(`https://x.test/functions/v1/overnight-fetch?tickers=${q}`, { headers: { "x-app-token": "t" } });
+  const viewer = await handle(get("ZABCDEFG,ZZZZZZZZ"), deps("ro"));
+  assertEquals(await viewer.json(), { ZABCDEFG: [{ date: "2026-05-29T01:00", close: 10, volume: 0 }] });
+  assertEquals(reads, [["OLDCO"]]);
+  const admin = await handle(get("ZABCDEFG"), deps("admin"));
+  assertEquals(await admin.json(), {});
+  assertEquals(reads[1], ["ZABCDEFG"]);
+});

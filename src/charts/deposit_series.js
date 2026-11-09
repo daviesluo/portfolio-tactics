@@ -16,13 +16,16 @@
 //      number of dollars; re-converting it at today's rate every render
 //      makes the line move on days no money changed hands. The rate is
 //      frozen per currency in `portfolio.depositFxRates`.
-//   3. It covers the SAME holdings the value line covers — the board
-//      scope `computeAt` uses. Money paid into a position that is on the
-//      board sits under a value line that includes that position; if the
-//      two scopes differed, the gap between the lines would be partly an
+//   3. It covers the SAME holdings the value line covers — `bookScope`,
+//      the scope `computeAt` takes: the board and every holding sold out
+//      of it whose ledger survives, so a rotation (sell one, buy another
+//      with the money) is flat, as it is money moved, not paid in.
+//      Money paid into a position sits under a value line that includes
+//      that position; if the two scopes differed, the gap between the lines would be partly an
 //      accounting artefact rather than profit.
 
 import { detectCurrency } from '../portfolio/fx.js';
+import { bookScope } from './ytd.js';
 
 /**
  * The frozen native→USD rate for a currency.
@@ -261,18 +264,18 @@ export function depositLedgerFor(h, t212Fills = null) {
  * @returns {number | null}  null when a currency has no frozen rate yet
  */
 export function depositAt({ portfolio, date, fxRates, t212Orders = null }) {
-  const positioned = new Set();
-  for (const pos of Object.values(portfolio?.positions || {})) {
-    for (const t of (/** @type {any} */ (pos)?.tickers || [])) positioned.add(t);
-  }
-  // No positions at all (unit fixtures) → don't filter, the same escape
-  // hatch `computeAt` uses so the two agree on scope in tests too.
-  const scopeAll = positioned.size === 0;
+  // The book `computeAt` values, from the one function both take it from:
+  // the board, plus every holding sold out of it whose ledger survives. A
+  // sale off a closed holding is money moved, not money out, and the buy
+  // it paid for is money moved, not money in; leaving the closed holding
+  // out drew every rotation as a deposit. Null (no positions at all, unit
+  // fixtures) → every holding, as `computeAt` does.
+  const scope = bookScope(portfolio);
 
   let deposit = 0;
   for (const [ticker, holding] of Object.entries(portfolio?.holdings || {})) {
     const h = /** @type {any} */ (holding);
-    if (!scopeAll && !positioned.has(ticker)) continue;
+    if (scope && !scope.has(ticker)) continue;
     if (h?.isCash || ticker === 'CASH') {
       // Cash on the board was deposited too, and the value line counts
       // it, so it lifts both lines equally instead of reading as profit.

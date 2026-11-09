@@ -30,6 +30,15 @@
 //     synced (a CN fund, a hand-kept wallet) keeps its rows as they are: without an intraday history the line falls
 //     back to interpolating from each row's own date and cost, which a fold would change;
 //   - the dividends one row per holding and currency, their sum in the same order the page adds them up.
+//   - a holding sold out of the board whose ledger reaches past the cutoff (`soldInWindow`), which the vs-S&P line
+//     counts until its sale (`bookScope`, src/charts/ytd.js), under an alias and rescaled, never by name (Davies,
+//     2026-11-09: "再研究下有没有办法访客可以看不到历史记录"): `soldAliases` names it "Z" and seven letters from an HMAC
+//     of the ticker (its exchange suffix kept, as the page's rules read it), and multiplies every price of it by a
+//     factor k from the same HMAC over its first cost, every share count divided by k. The line's value (shares ×
+//     price) and basis (shares × cost) are unchanged by that, to the last few bits, while no figure of the holding is
+//     its own. Its rows, its fills (`roOrders`), its slice and price in the positions answer (`roAnswer`), its
+//     recorded prices (`roSnapshotRows`) and its bars (`roScaleSeries`, the `chart` and `overnight-fetch` functions)
+//     all go out under the alias, so the page rebuilds and values it as the owner's page does the real one.
 
 /** A position's keys (the board's own top level is `positions` and `holdings`, `roBoard`). */
 export const RO_POSITION_KEYS = ["label", "subtitle", "role", "tickers"] as const;
@@ -199,8 +208,116 @@ export function foldLedger(lots: unknown, sells: unknown, nowMs: number): { lots
   return { lots: outLots.sort(byDate), sells: outSells.sort(byDate) };
 }
 
-/** The board a viewer is sent: the kept holdings (`keptTickers`) and the allowlisted fields of each. */
-export function roBoard(data: unknown, nowMs: number): Row | null {
+/** A sold-out holding's alias and the factor its prices are multiplied by (`soldAliases`). */
+export type SoldAlias = { ticker: string; alias: string; k: number };
+
+/**
+ * A holding sold out of the board whose ledger survives, as the page's `isSoldOut` (src/charts/ytd.js) reads it:
+ * `closed`, no shares, lots, and buys and sales (the rows `cleanLots` / `cleanSells` keep) that net to zero.
+ */
+export function isSoldOutHolding(h: unknown, nowMs: number): boolean {
+  if (!isObj(h) || h.closed !== true || h.isCash === true) return false;
+  const lots = Array.isArray(h.lots) ? h.lots : [];
+  if (lots.length === 0 || Math.abs(Number(h.shares) || 0) > 1e-6) return false;
+  const today = isoDay(nowMs);
+  const kept = (r: unknown, px: string) => isObj(r) && typeof r.date === "string" && DATE_RE.test(r.date.trim())
+    && r.date.trim() <= today && Number(r.shares) > 0 && Number.isFinite(Number(r[px])) && Number(r[px]) >= 0;
+  let n = 0;
+  for (const l of lots) if (kept(l, "cost")) n += Number((l as Row).shares);
+  for (const x of Array.isArray(h.sells) ? h.sells : []) if (kept(x, "price")) n -= Number((x as Row).shares);
+  return lots.some((l) => kept(l, "cost")) && Math.abs(n) < 1e-9;
+}
+
+/**
+ * The sold-out holdings (`isSoldOutHolding`) the viewer's line still needs: off the board (`keptTickers` sends any
+ * other by name, as before), with a buy or a sale on or after the cutoff. One wholly before it is in no window a
+ * viewer can open, adds nothing to any of them, and is not sent at all.
+ */
+export function soldInWindow(board: unknown, nowMs: number): string[] {
+  if (!isObj(board) || !isObj(board.holdings)) return [];
+  const { cutoff } = roCutoff(nowMs);
+  const kept = keptTickers(board);
+  const out: string[] = [];
+  for (const [t, h] of Object.entries(board.holdings)) {
+    if (kept.has(t) || !isSoldOutHolding(h, nowMs)) continue;
+    const rows = [...(Array.isArray((h as Row).lots) ? (h as Row).lots as unknown[] : []),
+      ...(Array.isArray((h as Row).sells) ? (h as Row).sells as unknown[] : [])];
+    if (rows.some((r) => isObj(r) && typeof r.date === "string" && r.date >= cutoff)) out.push(t);
+  }
+  return out.sort();
+}
+
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+/** A name `soldAliases` gives: "Z", seven letters of base 32, and a ticker's suffix if it had one. */
+export const isSoldAlias = (t: unknown): boolean => typeof t === "string" && /^Z[A-Z2-7]{7}(\.[A-Za-z]+|-USD)?$/.test(t);
+
+/**
+ * Each `soldInWindow` holding's alias and factor, from an HMAC-SHA-256 of its ticker under `secret` (the functions'
+ * APP_AUTH_SECRET): the same on every call and in every function, and not to be worked back to the ticker without the
+ * secret. The alias is "Z", seven letters of the HMAC, and the ticker's own suffix (".SG", "-USD"), which the page's
+ * rules read (a venue, a currency, a crypto's week). The factor is r / c: r between 1 and 10 from the HMAC, c the
+ * holding's first cost, so its prices come out between about 1 and 10 times their move since that buy. No secret, no
+ * alias: the holdings are then not sent, as before.
+ */
+export async function soldAliases(board: unknown, nowMs: number, secret: string): Promise<SoldAlias[]> {
+  if (!secret || !isObj(board) || !isObj(board.holdings)) return [];
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return [];
+  const key = await subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const out: SoldAlias[] = [];
+  for (const ticker of soldInWindow(board, nowMs)) {
+    const mac = new Uint8Array(await subtle.sign("HMAC", key, new TextEncoder().encode(`sold-alias:${ticker}`)));
+    let name = "Z";
+    for (let i = 0; i < 7; i++) name += B32[mac[i] & 31];
+    const suffix = ticker.match(/(\.[A-Za-z]+|-USD)$/)?.[0] ?? "";
+    const u = ((mac[8] << 24) | (mac[9] << 16) | (mac[10] << 8) | mac[11]) >>> 0;
+    const r = 1 + 9 * (u / 2 ** 32);
+    const lots = (board.holdings as Row)[ticker] as Row;
+    const first = (Array.isArray(lots.lots) ? lots.lots as unknown[] : []).filter(isObj)
+      .map((l) => Number(l.cost)).find((c) => Number.isFinite(c) && c > 0);
+    out.push({ ticker, alias: name + suffix, k: r / (first ?? 1) });
+  }
+  return out;
+}
+
+/** Rows with every share count divided by `k` and every `px` multiplied by it. */
+const scaleRows = (rows: Row[], px: string, k: number): Row[] =>
+  rows.map((r) => ({ ...r, shares: Number(r.shares) / k, [px]: Number(r[px]) * k }));
+
+/**
+ * Bars or recorded points of a sold-out holding, priced in its alias's units (`close` × k), anything else as it is.
+ * The `chart` and `overnight-fetch` functions answer an alias with its holding's own bars through this.
+ */
+export function roScaleSeries(points: unknown, k: number): Row[] {
+  return (Array.isArray(points) ? points : []).filter(isObj).map((p) => ({ ...p, close: Number(p.close) * k }));
+}
+
+/**
+ * The recorded prices a viewer is sent (`data?action=price-snapshots`): each row's prices of the kept tickers, and of
+ * each sold-out holding under its alias, rescaled. No other key: the record names every holding it ever sampled.
+ */
+export function roSnapshotRows(rows: unknown, kept: Set<string>, sold: SoldAlias[] = []): Row[] {
+  const byTicker = new Map(sold.map((s) => [s.ticker, s]));
+  return (Array.isArray(rows) ? rows : []).filter(isObj).map((r) => {
+    const prices: Row = {};
+    if (isObj(r.prices)) {
+      for (const [t, v] of Object.entries(r.prices)) {
+        if (kept.has(t)) prices[t] = v;
+        const s = byTicker.get(t);
+        if (s && Number.isFinite(Number(v))) prices[s.alias] = Number(v) * s.k;
+      }
+    }
+    return { ...r, prices };
+  });
+}
+
+/**
+ * The board a viewer is sent: the kept holdings (`keptTickers`) and the allowlisted fields of each, and each sold-out
+ * holding of `sold` under its alias (`soldAliases`): closed, no shares, its currency, its stored prices and its rows
+ * rescaled, and, when synced, the Trading 212 tag at zero so the page rebuilds it from its aliased fills.
+ */
+export function roBoard(data: unknown, nowMs: number, sold: SoldAlias[] = []): Row | null {
   if (!isObj(data)) return null;
   const kept = keptTickers(data);
   const positions: Row = {};
@@ -220,18 +337,40 @@ export function roBoard(data: unknown, nowMs: number): Row | null {
     }
     holdings[t] = out;
   }
+  for (const { ticker, alias, k } of sold) {
+    const h = isObj(data.holdings) ? (data.holdings as Row)[ticker] : null;
+    if (!isObj(h) || kept.has(ticker)) continue;
+    const out: Row = { shares: 0, cost: 0, closed: true };
+    if (typeof h.currency === "string") out.currency = h.currency;
+    for (const f of ["lastPrice", "prevClose"]) if (Number.isFinite(Number(h[f])) && h[f] != null) out[f] = Number(h[f]) * k;
+    const ledger = isSynced(h) ? foldLedger(h.lots, h.sells, nowMs) : {
+      lots: (Array.isArray(h.lots) ? h.lots : []).filter(isObj).map((r) => pick(r, RO_LOT_KEYS)),
+      sells: (Array.isArray(h.sells) ? h.sells : []).filter(isObj).map((r) => pick(r, RO_SELL_KEYS)),
+    };
+    out.lots = scaleRows(ledger.lots, "cost", k);
+    out.sells = scaleRows(ledger.sells, "price", k);
+    if (isSynced(h)) { out.t212Shares = 0; out.t212Cost = 0; }
+    holdings[alias] = out;
+  }
   return { positions, holdings };
 }
 
 /**
- * The stored fills a viewer is sent: the kept tickers' only, folded per ticker and stated currency (`fold`), each dated
+ * The stored fills a viewer is sent: the kept tickers' only (and the sold-out holdings' of `sold`, aliased), folded per ticker and stated currency (`fold`), each dated
  * at midnight UTC of its day (the page reads the day; the time only orders a day's rows, and there is one a side).
  * A fill `lotsFromOrders` would skip passes through with its fields trimmed, since the currency and settle checks
  * still count it. Oldest first, as the function reads them.
  */
-export function roOrders(rows: unknown, kept: Set<string>, nowMs: number): Row[] {
+export function roOrders(rows: unknown, kept: Set<string>, nowMs: number, sold: SoldAlias[] = []): Row[] {
   const { cutoff, openDay } = roCutoff(nowMs);
-  const list = (Array.isArray(rows) ? rows : []).filter((o): o is Row => isObj(o) && typeof o.ticker === "string" && kept.has(o.ticker));
+  const byTicker = new Map(sold.map((s) => [s.ticker, s]));
+  // A sold-out holding's fills go out under its alias, rescaled (`soldAliases`), and fold as any kept ticker's.
+  const list = (Array.isArray(rows) ? rows : []).filter(isObj).flatMap((o): Row[] => {
+    if (typeof o.ticker !== "string") return [];
+    if (kept.has(o.ticker)) return [o];
+    const s = byTicker.get(o.ticker);
+    return s ? [{ ...o, ticker: s.alias, shares: Number(o.shares) / s.k, price: Number(o.price) * s.k }] : [];
+  });
   const dayOf = (o: Row) => String(o.executed_at ?? "").slice(0, 10);
   const ok = (o: Row) => DATE_RE.test(dayOf(o)) && Number.isFinite(Number(o.shares)) && Number(o.shares) > 0
     && Number.isFinite(Number(o.price)) && Number(o.price) > 0;
@@ -283,15 +422,30 @@ export function roDividends(rows: unknown, kept: Set<string>, nowMs: number): Ro
   return out.sort((a, b) => String(a.paid_on ?? "").localeCompare(String(b.paid_on ?? "")));
 }
 
-/** The positions answer a viewer is sent: the kept tickers' slices and prices, and the answer's own flags. */
-export function roAnswer(body: unknown, kept: Set<string>): Row {
+/** The positions answer a viewer is sent: the kept tickers' slices and prices (a sold-out one's aliased), and the answer's own flags. */
+export function roAnswer(body: unknown, kept: Set<string>, sold: SoldAlias[] = []): Row {
   const out = pick(body, RO_ANSWER_KEYS);
-  const only = (m: unknown, f: (v: unknown) => unknown) => {
+  const byTicker = new Map(sold.map((s) => [s.ticker, s]));
+  const only = (m: unknown, f: (v: unknown, k: number) => unknown) => {
     const r: Row = {};
-    if (isObj(m)) for (const [t, v] of Object.entries(m)) if (kept.has(t)) r[t] = f(v);
+    if (isObj(m)) {
+      for (const [t, v] of Object.entries(m)) {
+        if (kept.has(t)) r[t] = f(v, 1);
+        const s = byTicker.get(t);
+        if (s) r[s.alias] = f(v, s.k);
+      }
+    }
     return r;
   };
-  if ("holdings" in out) out.holdings = only(out.holdings, (v) => pick(v, RO_SLICE_KEYS));
-  if ("prices" in out) out.prices = only(out.prices, (v) => v);
+  // A sold-out holding's slice and price under its alias, rescaled: shares ÷ k, costs and prices × k.
+  const slice = (v: unknown, k: number) => {
+    const p = pick(v, RO_SLICE_KEYS);
+    if (k === 1) return p;
+    for (const f of ["shares", "previousShares"]) if (f in p && Number.isFinite(Number(p[f]))) p[f] = Number(p[f]) / k;
+    for (const f of ["cost", "previousCost"]) if (f in p && Number.isFinite(Number(p[f]))) p[f] = Number(p[f]) * k;
+    return p;
+  };
+  if ("holdings" in out) out.holdings = only(out.holdings, slice);
+  if ("prices" in out) out.prices = only(out.prices, (v, k) => (k === 1 || !Number.isFinite(Number(v)) ? v : Number(v) * k));
   return out;
 }

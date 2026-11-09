@@ -42,11 +42,20 @@ const BOLT_FILLS = [
   fill('BOLT', preCut(60), 'buy', 10, 3), fill('BOLT', preCut(30), 'sell', 4, 5),
   fill('BOLT', dayAgo(20), 'buy', 3, 4), fill('BOLT', dayAgo(20), 'buy', 2, 4.4, '19:00'), fill('BOLT', dayAgo(6), 'sell', 2, 4.8),
 ];
-// Closed for good, and closed with a slot Trading 212 can put it back on: a round trip each.
+// Closed for good, and closed with a slot Trading 212 can put it back on: a round trip each. GONE and WANE are sold
+// out inside the windows, so the line counts them until their sale (`bookScope`): the viewer gets each under an alias,
+// rescaled, never by name. WANE is synced, its fills folded like ACME's; GONE is hand-kept. QUIT was sold out before
+// the fold's cutoff: in no window, so not sent at all.
 const GONE_FILLS = [fill('GONE', preCut(100), 'buy', 3, 7), fill('GONE', dayAgo(50), 'sell', 3, 9)];
 const ZETA_FILLS = [fill('ZETA', preCut(80), 'buy', 2, 6), fill('ZETA', preCut(10), 'sell', 2, 5)];
-const ORDERS = [...ACME_FILLS, ...BOLT_FILLS, ...GONE_FILLS, ...ZETA_FILLS]
+const WANE_FILLS = [
+  fill('WANE', preCut(60), 'buy', 5, 8), fill('WANE', preCut(30), 'buy', 1, 7.5), fill('WANE', dayAgo(30), 'buy', 2, 9),
+  fill('WANE', dayAgo(30), 'buy', 1, 9.2, '18:00'), fill('WANE', dayAgo(15), 'sell', 9, 10),
+];
+const QUIT_FILLS = [fill('QUIT', preCut(90), 'buy', 4, 3), fill('QUIT', preCut(40), 'sell', 4, 4)];
+const ORDERS = [...ACME_FILLS, ...BOLT_FILLS, ...GONE_FILLS, ...ZETA_FILLS, ...WANE_FILLS, ...QUIT_FILLS]
   .sort((a, b) => a.executed_at.localeCompare(b.executed_at));
+const SECRET = 'a made-up secret';
 const OTHER_LOT = { date: preCut(40), shares: 1, cost: 9, ts: 99, src: 'other' };
 
 /** The stored board, as an admin's page would have saved it after a sync. */
@@ -74,6 +83,8 @@ function board() {
         lots: [{ date: dayAgo(80), shares: 20, cost: 1 }] },
       GONE: { shares: 0, cost: 0, closed: true, currency: 'USD', lastPrice: 9, ...asLedger(GONE_FILLS) },
       ZETA: { shares: 0, cost: 0, closed: true, currency: 'USD', lastPrice: 6, t212Shares: 0, t212Cost: 0, t212PositionKey: 'LW', ...asLedger(ZETA_FILLS) },
+      WANE: { shares: 0, cost: 0, closed: true, currency: 'USD', lastPrice: 10, t212Shares: 0, t212Cost: 0, ...asLedger(WANE_FILLS) },
+      QUIT: { shares: 0, cost: 0, closed: true, currency: 'USD', lastPrice: 4, t212Shares: 0, t212Cost: 0, ...asLedger(QUIT_FILLS) },
     },
     snapshots: [], depositFxRates: { GBP: 1.3 },
   };
@@ -101,29 +112,38 @@ function pageBook({ data, answer, orders, dividends }) {
   const divs = dividendEventsByTicker(dividends, withClosedFromFills(next.holdings, orders));
   return withDividendCosts(next, divs.byTicker);
 }
-function viewerAnswers(nowMs = NOW) {
+/** The sold-out holdings' aliases, as every function computes them (`soldAliases`). */
+const SOLD = await ro.soldAliases(board(), NOW, SECRET);
+function viewerAnswers(nowMs = NOW, sold = SOLD) {
   const data = board();
   const kept = ro.keptTickers(data);
   return {
-    data: ro.roBoard(data, nowMs),
-    answer: ro.roAnswer(ANSWER, kept),
-    orders: ro.roOrders(ORDERS, kept, nowMs),
+    data: ro.roBoard(data, nowMs, sold),
+    answer: ro.roAnswer(ANSWER, kept, sold),
+    orders: ro.roOrders(ORDERS, kept, nowMs, sold),
     dividends: ro.roDividends(DIVIDENDS, kept, nowMs),
   };
 }
 const ADMIN = () => pageBook({ data: board(), answer: ANSWER, orders: ORDERS, dividends: DIVIDENDS });
 
 /** A daily close for every day from well before the cutoff to today: a different wave for each ticker. */
-const HIST = Object.fromEntries(['ACME', 'BOLT', 'NOVA', 'BRIT.L'].map((t, k) => [t,
+const HIST = Object.fromEntries(['ACME', 'BOLT', 'NOVA', 'BRIT.L', 'GONE', 'WANE', 'QUIT', 'ZETA'].map((t, k) => [t,
   Array.from({ length: 900 }, (_, i) => ({ date: dayAgo(899 - i), close: (k + 2) * (1 + 0.2 * Math.sin((i + 13 * k) / 9)) }))]));
+/** The bars the viewer's page gets: a sold-out holding's under its alias, priced in its units (`roScaleSeries`, as the
+ * `chart` function answers an alias), none under its name. */
+const histFor = (sold) => {
+  const out = { ...HIST };
+  for (const s of sold) { out[s.alias] = ro.roScaleSeries(HIST[s.ticker], s.k); delete out[s.ticker]; }
+  return out;
+};
 const close = (a, b) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
 
 /** The vs-S&P line's value and basis on every range, every day of it, both bases; and each holding's window move. */
-function lineOf(book) {
+function lineOf(book, hist = HIST) {
   const out = [];
   for (const range of RANGE_KEYS) {
     const anchor = anchorDateFor(range, new Date(NOW));
-    const ts = buildTickerSeries(HIST, anchor, range, {}, false, true);
+    const ts = buildTickerSeries(hist, anchor, range, {}, false, true);
     for (let d = Date.parse(`${anchor}T00:00:00Z`); d <= NOW; d += DAY) {
       for (const prevCloseBasis of [false, true]) {
         const { value, basis } = computeAt({
@@ -157,10 +177,22 @@ describe('the read-only book gives the page the same figures as the whole book',
   it('sends less: no closed-for-good holding, its fills or dividends; fewer ledger rows; no snapshots or deposit rates', () => {
     const v = viewerAnswers();
     expect(Object.keys(v.data).sort()).toEqual(['holdings', 'positions']);
-    expect(Object.keys(v.data.holdings).sort()).toEqual(['ACME', 'BOLT', 'BRIT.L', 'CASH', 'NOVA', 'ZETA']);
-    expect(v.orders.some((o) => o.ticker === 'GONE')).toBe(false);
-    expect(v.dividends.some((d) => d.ticker === 'GONE')).toBe(false);
-    expect(v.orders.length).toBeLessThan(ORDERS.length - GONE_FILLS.length);
+    const aliases = SOLD.map((x) => x.alias).sort();
+    expect(SOLD.map((x) => x.ticker)).toEqual(['GONE', 'WANE']);                 // QUIT: before the cutoff, not sent
+    expect(aliases.every(ro.isSoldAlias)).toBe(true);
+    expect(Object.keys(v.data.holdings).sort()).toEqual(['ACME', 'BOLT', 'BRIT.L', 'CASH', 'NOVA', 'ZETA', ...aliases].sort());
+    // No sold-out holding's name, anywhere in anything the viewer is sent; nor one of its own prices or costs.
+    const sent = JSON.stringify(v);
+    for (const name of ['GONE', 'WANE', 'QUIT']) expect(sent.includes(name)).toBe(false);
+    const own = new Set([...GONE_FILLS, ...WANE_FILLS].map((o) => o.price));
+    for (const x of SOLD) {
+      const h = v.data.holdings[x.alias];
+      expect(h.closed).toBe(true);
+      for (const r of [...h.lots, ...h.sells]) expect(own.has(r.cost ?? r.price)).toBe(false);
+    }
+    expect(v.orders.filter((o) => aliases.includes(o.ticker)).every((o) => !own.has(o.price))).toBe(true);
+    expect(v.dividends.some((d) => d.ticker === 'GONE' || aliases.includes(d.ticker))).toBe(false);
+    expect(v.orders.length).toBeLessThan(ORDERS.length - GONE_FILLS.length - QUIT_FILLS.length);
     expect(v.data.holdings.ACME.lots.length).toBeLessThan(board().holdings.ACME.lots.length);
     expect(v.orders.every((o) => o.executed_at.endsWith('T00:00:00Z'))).toBe(true);
     // Both pages did rebuild the synced ledgers from the fills (the comparisons below are about that rebuild too): the
@@ -182,7 +214,7 @@ describe('the read-only book gives the page the same figures as the whole book',
   });
 
   it('the vs-S&P line, every range, every day, both bases; and Top Movers over 1W, 1M and 3M', () => {
-    const admin = lineOf(ADMIN()), viewer = lineOf(pageBook(viewerAnswers()));
+    const admin = lineOf(ADMIN()), viewer = lineOf(pageBook(viewerAnswers()), histFor(SOLD));
     expect(admin.length).toBeGreaterThan(400);
     expect(sameRows(viewer, admin), JSON.stringify(viewer.find((r, i) => !sameRows([r], [admin[i]])))).toBe(true);
     expect(sameRows(moversOf(pageBook(viewerAnswers())), moversOf(ADMIN()))).toBe(true);
@@ -190,7 +222,25 @@ describe('the read-only book gives the page the same figures as the whole book',
 
   it('a fold that reached into a window would show: the comparison has teeth', () => {
     // Folded as if it were 400 days later, every row here is "before the cutoff", the windows' own buys among them.
-    const late = lineOf(pageBook(viewerAnswers(NOW + 400 * DAY)));
+    const late = lineOf(pageBook(viewerAnswers(NOW + 400 * DAY)), histFor(SOLD));
     expect(sameRows(late, lineOf(ADMIN()))).toBe(false);
+  });
+
+  it('the sold-out holdings count: without them the viewer\'s line is not the owner\'s', () => {
+    // As until 2026-11-09: the viewer sent none of them. GONE and WANE moved inside the windows, so the lines part.
+    const without = lineOf(pageBook(viewerAnswers(NOW, [])));
+    expect(sameRows(without, lineOf(ADMIN()))).toBe(false);
+  });
+
+  it('every sold-out holding\'s figures are its own times k: value and basis survive the rescale', () => {
+    // The admin's book with each sold-out holding renamed and rescaled by hand reads the line to the last bits.
+    const scaled = structuredClone(ADMIN());
+    for (const x of SOLD) {
+      const h = scaled.holdings[x.ticker];
+      delete scaled.holdings[x.ticker];
+      scaled.holdings[x.alias] = { ...h, lots: h.lots.map((l) => ({ ...l, shares: l.shares / x.k, cost: l.cost * x.k })),
+        sells: h.sells.map((r) => ({ ...r, shares: r.shares / x.k, price: r.price * x.k })) };
+    }
+    expect(sameRows(lineOf(scaled, histFor(SOLD)), lineOf(ADMIN()))).toBe(true);
   });
 });

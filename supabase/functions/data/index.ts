@@ -19,7 +19,9 @@
 
 import { reportServerError } from "../_shared/ops.ts";
 import { verifyToken } from "../_shared/token.ts";
-import { roBoard } from "./ro_view.ts";
+import { keptTickers, roBoard, roSnapshotRows, soldAliases, type SoldAlias } from "./ro_view.ts";
+
+const APP_AUTH_SECRET = Deno.env.get("APP_AUTH_SECRET") ?? "";
 
 // Re-exported so this function's index.test.ts (and auth's cross-check
 // test, which verifies an auth-issued token against this module) keep
@@ -63,14 +65,25 @@ const SB_HEADERS = {
 /**
  * The `load` answer for one role, from the `board_data` rows read. An admin gets the stored board as it is; a
  * read-only token gets `roBoard` of it: the holdings its board can show and the fields its page reads, the ledger
- * folded (./ro_view.ts). A cold project (no row yet) is null data and version 0 for both, so the client's
+ * folded, and each sold-out holding of `sold` under its alias (./ro_view.ts). A cold project (no row yet) is null
+ * data and version 0 for both, so the client's
  * optimistic-concurrency state has a starting point (an If-Match of 0 succeeds on the first save). Pure, for testing.
  */
-export function loadAnswer(role: "admin" | "ro" | "check", rows: unknown, nowMs: number): { data: unknown; version: number } {
+export function loadAnswer(role: "admin" | "ro" | "check", rows: unknown, nowMs: number, sold: SoldAlias[] = []): { data: unknown; version: number } {
   if (!Array.isArray(rows) || rows.length === 0) return { data: null, version: 0 };
   const row = rows[0] ?? {};
   const version = typeof row.version === "number" ? row.version : 0;
-  return { data: role === "admin" ? row.data : roBoard(row.data, nowMs), version };
+  return { data: role === "admin" ? row.data : roBoard(row.data, nowMs, sold), version };
+}
+
+/** The stored board, or null when it could not be read. */
+async function readBoard(): Promise<unknown> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/board_data?id=eq.1&select=data`, {
+    headers: SB_HEADERS, signal: AbortSignal.timeout(5_000),
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return Array.isArray(rows) && rows[0] ? rows[0].data : null;
 }
 
 // Direct insert into public.ops_errors via the service-role key (RLS
@@ -110,7 +123,11 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
         { headers: SB_HEADERS, signal: AbortSignal.timeout(5_000) },
       );
       if (!res.ok) return json(res.status, { error: "load failed" });
-      return json(200, loadAnswer(verified.role, await res.json(), Date.now()));
+      const rows = await res.json();
+      const now = Date.now();
+      const sold = verified.role === "admin" || !Array.isArray(rows) || !rows[0] ? []
+        : await soldAliases(rows[0].data, now, APP_AUTH_SECRET);
+      return json(200, loadAnswer(verified.role, rows, now, sold));
     }
 
     // Server-recorded 5-minute prices for the performance charts.
@@ -123,7 +140,8 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
     //
     // Read is allowed for BOTH roles: a read-only viewer sees the same
     // charts. The rows still never leave the token gate, because their
-    // keys enumerate the holdings.
+    // keys enumerate the holdings, and a viewer's are cut to the board's
+    // and the sold-out holdings' aliases (ro_view.ts).
     if (action === "price-snapshots" && req.method === "GET") {
       const sinceMs = Number(url.searchParams.get("since"));
       const since = Number.isFinite(sinceMs) && sinceMs > 0
@@ -146,7 +164,13 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
       });
       if (!res.ok) return json(res.status, { error: "price snapshots failed" });
       const rows = await res.json();
-      return json(200, { rows: Array.isArray(rows) ? rows : [] });
+      if (verified.role === "admin") return json(200, { rows: Array.isArray(rows) ? rows : [] });
+      // A read-only token: the board's own tickers, and each sold-out holding under its alias (`roSnapshotRows`):
+      // the record's keys name every holding it ever sampled. No board to cut against, no rows.
+      const board = await readBoard().catch(() => null);
+      if (!board) return json(503, { error: "board unavailable" });
+      const sold = await soldAliases(board, Date.now(), APP_AUTH_SECRET);
+      return json(200, { rows: roSnapshotRows(rows, keptTickers(board), sold) });
     }
 
     if (action === "save" && req.method === "POST") {

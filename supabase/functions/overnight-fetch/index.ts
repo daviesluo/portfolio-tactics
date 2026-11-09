@@ -28,6 +28,7 @@
 // gate stays on (the page sends the anon key as its bearer).
 
 import { verifyToken } from "../_shared/token.ts";
+import { isSoldAlias, roScaleSeries, soldAliases, type SoldAlias } from "../data/ro_view.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -146,6 +147,18 @@ async function readPoints(
   );
 }
 
+/** The stored board's sold-out holdings' aliases (`soldAliases`), or none when the board could not be read. */
+async function readSoldAliases(): Promise<SoldAlias[]> {
+  if (!SB_URL || !SERVICE_KEY) return [];
+  const res = await fetch(`${SB_URL}/rest/v1/board_data?id=eq.1&select=data`, {
+    headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!res.ok) return [];
+  const rows = await res.json();
+  return await soldAliases(Array.isArray(rows) && rows[0] ? rows[0].data : null, Date.now(), Deno.env.get("APP_AUTH_SECRET") ?? "");
+}
+
 // ---------------- Server ----------------
 
 type Row = { ticker: string; bucket_time: string; price: number | string };
@@ -157,10 +170,12 @@ type Row = { ticker: string; bucket_time: string; price: number | string };
 export async function handle(req: Request, deps: {
   verify: (token: string) => Promise<unknown>;
   read: (tickers: string[], cutoff: string) => Promise<Row[]>;
+  aliases?: () => Promise<SoldAlias[]>;
   now?: number;
-} = { verify: (t) => verifyToken(t), read: readPoints }): Promise<Response> {
+} = { verify: (t) => verifyToken(t), read: readPoints, aliases: readSoldAliases }): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
-  if (!(await deps.verify(req.headers.get("x-app-token") ?? ""))) {
+  const verified = await deps.verify(req.headers.get("x-app-token") ?? "");
+  if (!verified) {
     return new Response(JSON.stringify({ error: "invalid token" }), {
       status: 401, headers: { ...CORS, "Content-Type": "application/json" },
     });
@@ -169,10 +184,22 @@ export async function handle(req: Request, deps: {
   const tickers = parseTickers(url.searchParams.get("tickers"));
   // 26h: today's overnight session + buffer for a cron-missed tick.
   const cutoff = new Date((deps.now ?? Date.now()) - 26 * 3_600_000).toISOString();
+  // A read-only page asks for a sold-out holding by its alias (../data/ro_view.ts `soldAliases`): it gets that holding's
+  // points under the alias, priced in its units; an alias no holding has gets nothing, and an admin's list is as sent.
+  const ro = (verified as { role?: string })?.role !== "admin";
+  const sold = ro && tickers.some(isSoldAlias) && deps.aliases ? await deps.aliases().catch(() => []) : [];
+  const byAlias = new Map(sold.map((x) => [x.alias, x]));
+  const real = tickers.flatMap((t) => (!ro || !isSoldAlias(t) ? [t] : byAlias.has(t) ? [byAlias.get(t)!.ticker] : []));
   let rows: Row[] = [];
-  try { rows = await deps.read(tickers, cutoff); }
+  try { rows = await deps.read([...new Set(real)], cutoff); }
   catch { rows = []; }
-  return new Response(JSON.stringify(groupRows(rows)), {
+  const grouped = groupRows(rows);
+  const out: Record<string, unknown> = {};
+  for (const t of tickers) {
+    if (ro && isSoldAlias(t)) { const x = byAlias.get(t); if (x && grouped[x.ticker]) out[t] = roScaleSeries(grouped[x.ticker], x.k); }
+    else if (grouped[t]) out[t] = grouped[t];
+  }
+  return new Response(JSON.stringify(out), {
     status: 200,
     headers: {
       ...CORS,

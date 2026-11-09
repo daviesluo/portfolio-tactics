@@ -9,6 +9,7 @@
 
 import { reportServerError } from "../_shared/ops.ts";
 import { verifyToken } from "../_shared/token.ts";
+import { isSoldAlias, roScaleSeries, soldAliases, type SoldAlias } from "../data/ro_view.ts";
 import { isBoardStrategyTicker, readStrategyChart } from "../_shared/board_strategies.ts";
 
 // `x-app-token` is advertised here BEFORE anything requires it, on
@@ -286,6 +287,21 @@ async function fetchYahooWithPvtFallback(
   return null;
 }
 
+/** The stored board's sold-out holdings' aliases (`soldAliases`), or none when the board could not be read. */
+async function readSoldAliases(): Promise<SoldAlias[]> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/board_data?id=eq.1&select=data`, {
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return [];
+    const rows = await res.json();
+    return await soldAliases(Array.isArray(rows) && rows[0] ? rows[0].data : null, Date.now(), Deno.env.get("APP_AUTH_SECRET") ?? "");
+  } catch {
+    return [];
+  }
+}
+
 // Direct insert into public.ops_errors via the service-role key (RLS
 // denies anon). Used by the top-level try/catch wrap so a runtime
 // crash here becomes a row the admin ⚠ badge surfaces instead of a
@@ -311,7 +327,8 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
     // the actual control. Checked BEFORE any upstream call so a
     // rejected request costs nothing.
     const appToken = req.headers.get("x-app-token") ?? "";
-    if (!(await verifyToken(appToken))) {
+    const verified = await verifyToken(appToken);
+    if (!verified) {
       return new Response(JSON.stringify({ error: "invalid token" }), {
         status: 401,
         headers: { ...CORS, "Content-Type": "application/json" },
@@ -339,8 +356,18 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
       });
     }
 
+    // A read-only page asks for a sold-out holding by its alias (../data/ro_view.ts `soldAliases`), never by name: it
+    // gets that holding's own bars, priced in the alias's units. An alias no board holding has gets nothing.
+    const byAlias = verified.role !== "admin" && tickers.some(isSoldAlias)
+      ? new Map((await readSoldAliases()).map((s) => [s.alias, s]))
+      : new Map<string, SoldAlias>();
     const entries = await Promise.all(
-      tickers.map(async (t) => [t, await fetchOne(t, range, interval, includePrePost)] as const),
+      tickers.map(async (t) => {
+        if (!isSoldAlias(t) || verified.role === "admin") return [t, await fetchOne(t, range, interval, includePrePost)] as const;
+        const s = byAlias.get(t);
+        const r = s ? await fetchOne(s.ticker, range, interval, includePrePost) : null;
+        return [t, r && s ? roScaleSeries(r, s.k) as Point[] : null] as const;
+      }),
     );
 
     const out: Record<string, Point[]> = {};

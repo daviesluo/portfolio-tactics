@@ -88,7 +88,7 @@ import { reportServerError } from "../_shared/ops.ts";
 import { beatKeyOfRequest, writeBeat } from "../_shared/beats.ts";
 import { constantTimeEqual, verifyToken } from "../_shared/token.ts";
 import { T212_DCA_ETFS, t212TickerToYahoo } from "../_shared/t212_tickers.ts";
-import { keptTickers, roAnswer, roDividends, roOrders } from "../data/ro_view.ts";
+import { keptTickers, roAnswer, roDividends, roOrders, soldAliases, type SoldAlias } from "../data/ro_view.ts";
 
 // Re-exported so this function's index.test.ts keeps pinning the exact
 // implementation the token gate below trusts.
@@ -1646,22 +1646,26 @@ export type ViewerKind = "positions" | "orders" | "dividends";
  * What a read-only token is sent of an answer, against the tickers its board can show (`keptTickers` of the stored
  * board, ../data/ro_view.ts): the positions answer's slices and prices for those alone; their fills folded to what the
  * vs-S&P line and the average cost are made of (`roOrders`); their dividends one row per holding and currency
- * (`roDividends`). Never the fills or dividends of a position closed for good, nor any field the page does not read.
+ * (`roDividends`). A position closed for good: its fills and slice only under its alias (`sold`, `soldAliases`), its
+ * dividends never; no field the page does not read.
  * An admin's answer never comes here. Pure, for testing.
  */
-export function forViewer(kind: ViewerKind, body: Record<string, unknown>, kept: Set<string>, nowMs: number): Record<string, unknown> {
-  if (kind === "orders") return { orders: roOrders(body.orders, kept, nowMs), complete: body.complete === true };
+export function forViewer(kind: ViewerKind, body: Record<string, unknown>, kept: Set<string>, nowMs: number, sold: SoldAlias[] = []): Record<string, unknown> {
+  if (kind === "orders") return { orders: roOrders(body.orders, kept, nowMs, sold), complete: body.complete === true };
   if (kind === "dividends") return { dividends: roDividends(body.dividends, kept, nowMs), complete: body.complete === true };
-  return roAnswer(body, kept);
+  return roAnswer(body, kept, sold);
 }
 
 /** An answer for one role: an admin's as it is, a read-only token's through `forViewer`. Pure, for testing. */
-export function answerFor(role: "admin" | "ro" | "check", kind: ViewerKind, body: Record<string, unknown>, kept: Set<string>, nowMs: number): Record<string, unknown> {
-  return role === "admin" ? body : forViewer(kind, body, kept, nowMs);
+export function answerFor(role: "admin" | "ro" | "check", kind: ViewerKind, body: Record<string, unknown>, kept: Set<string>, nowMs: number, sold: SoldAlias[] = []): Record<string, unknown> {
+  return role === "admin" ? body : forViewer(kind, body, kept, nowMs, sold);
 }
 
-/** The tickers the stored board can show (`keptTickers`), or null when the board could not be read. */
-async function readKeptTickers(): Promise<Set<string> | null> {
+/**
+ * The tickers the stored board can show (`keptTickers`) and its sold-out holdings' aliases (`soldAliases`: their fills
+ * and slices go out under those, never by name), or null when the board could not be read.
+ */
+async function readViewerCut(): Promise<{ kept: Set<string>; sold: SoldAlias[] } | null> {
   try {
     const res = await fetch(`${SB_URL}/rest/v1/board_data?id=eq.1&select=data`, {
       headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}`, accept: "application/json" },
@@ -1669,7 +1673,8 @@ async function readKeptTickers(): Promise<Set<string> | null> {
     });
     if (!res.ok) return null;
     const rows = await res.json();
-    return keptTickers(Array.isArray(rows) && rows[0] ? rows[0].data : null);
+    const board = Array.isArray(rows) && rows[0] ? rows[0].data : null;
+    return { kept: keptTickers(board), sold: await soldAliases(board, Date.now(), Deno.env.get("APP_AUTH_SECRET") ?? "") };
   } catch {
     return null;
   }
@@ -1847,13 +1852,13 @@ if (import.meta.main) {
       // Every answer below goes out through `send`: as it is to an admin, cut to what the page uses to a read-only token
       // (`forViewer`). The board it is cut against is read once a request; with no board to cut against a read-only
       // token gets a 503, which its page takes as no answer this time (it keeps what it had), never as an empty book.
-      let keptRead: Promise<Set<string> | null> | null = null;
+      let cutRead: Promise<{ kept: Set<string>; sold: SoldAlias[] } | null> | null = null;
       const send = async (kind: ViewerKind, body: Record<string, unknown>): Promise<Response> => {
         const headers = { ...CORS, "content-type": "application/json" };
         if (verified.role === "admin") return new Response(JSON.stringify(body), { headers });
-        const kept = await (keptRead ??= readKeptTickers());
-        if (!kept) return new Response(JSON.stringify({ error: "board unavailable" }), { status: 503, headers });
-        return new Response(JSON.stringify(answerFor(verified.role, kind, body, kept, Date.now())), { headers });
+        const cut = await (cutRead ??= readViewerCut());
+        if (!cut) return new Response(JSON.stringify({ error: "board unavailable" }), { status: 503, headers });
+        return new Response(JSON.stringify(answerFor(verified.role, kind, body, cut.kept, Date.now(), cut.sold)), { headers });
       };
 
       if (!T212_API_KEY) {

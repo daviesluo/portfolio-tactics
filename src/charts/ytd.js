@@ -592,6 +592,65 @@ export function closeOn(tickerSeries, ticker, date) {
 }
 
 /**
+ * The holdings the performance panel measures, on both tabs: every one on
+ * the board, and every one sold out of it whose ledger survives. Null when
+ * the book has no positions at all (unit fixtures), meaning every holding.
+ * `computeAt` (the vs-S&P line, and INVESTMENT's Value: one series) and
+ * `depositAt` (Deposited) take their scope from here and nowhere else, so
+ * the lines cannot cover different books.
+ *
+ * A full sale takes a holding off every position but keeps it, `closed`,
+ * with its buys and sales (portfolio_edits). Leaving those out (until
+ * Davies, 2026-11-09: "似乎是把我换仓时卖了的钱再买别的股票时当成新deposit
+ * 的钱了") said a holding sold this month had never been owned: its sale
+ * never came off Deposited, its worth was missing from Value before the
+ * sale, and the buy its money paid for stepped BOTH lines up as if new
+ * money had come in, while the vs-S&P line never saw its move before the
+ * sale. On the real book one month of rotations read Deposited up by over
+ * a quarter where a few percent was paid in. Counted, a closed holding is
+ * in the book until its last sale and nets to nothing from then on, so the
+ * right edge (PORTFOLIO, DAY CHANGE, the session basis) is the board's.
+ *
+ * The read-only viewer is sent each such holding under an alias, its
+ * numbers rescaled, never its name or its own prices
+ * (supabase/functions/data/ro_view.ts `soldAliases`), so its page draws
+ * the same lines from the same functions.
+ *
+ * Only a ledger that nets to zero shares counts: one that does not is not
+ * a sold-out position this book can price, and stays out as before. A
+ * holding off the board that is not `closed` is an orphan of an edit and
+ * stays out too, as the scoreboard leaves it out.
+ *
+ * @param {{ holdings?: Record<string, any>, positions?: Record<string, any> } | null | undefined} portfolio
+ * @returns {Set<string> | null}
+ */
+export function bookScope(portfolio) {
+  /** @type {Set<string>} */
+  const scope = new Set();
+  for (const pos of Object.values(portfolio?.positions || {})) {
+    if (pos && Array.isArray(pos.tickers)) for (const t of pos.tickers) scope.add(t);
+  }
+  if (scope.size === 0) return null;
+  for (const [ticker, h] of Object.entries(portfolio?.holdings || {})) {
+    if (scope.has(ticker) || !isSoldOut(h) || ticker === 'CASH') continue;
+    scope.add(ticker);
+  }
+  return scope;
+}
+
+/**
+ * A holding sold out of the board whose ledger survives: `closed`, no
+ * shares, and lots and sales that net to zero (`bookScope`).
+ * @param {any} h
+ */
+export function isSoldOut(h) {
+  if (!h?.closed || h.isCash) return false;
+  const lots = Array.isArray(h.lots) ? h.lots : [];
+  if (lots.length === 0 || Math.abs(Number(h.shares) || 0) > 1e-6) return false;
+  return netPosition(lots, Array.isArray(h.sells) ? h.sells : []).shares === 0;
+}
+
+/**
  * One holding's dated ledger for the chart: the buys AND the sales.
  *
  * Sales are not a detail. `computeAt` walks this to decide what was held
@@ -621,7 +680,7 @@ export function ledgerFor(h, yearStart) {
   const sells = Array.isArray(h.sells) ? h.sells : [];
   if (lots.length > 0) {
     const net = netPosition(lots, sells);
-    if (Math.abs(net.shares - h.shares) < 0.0001) return { lots, sells };
+    if (Math.abs(net.shares - (Number(h.shares) || 0)) < 0.0001) return { lots, sells };
   }
   return { lots: [{ date: yearStart, shares: h.shares, cost: h.lastPrice || 0 }], sells: [] };
 }
@@ -671,18 +730,19 @@ export function computeAt(opts) {
   // scoreboard, splitting the two numbers for reasons unrelated to the
   // basis. Restrict to positioned tickers so the chart's PORTFOLIO line
   // is computed over exactly the same set.
-  const positioned = new Set();
-  for (const pos of Object.values(portfolio.positions || {})) {
-    if (pos && Array.isArray(pos.tickers)) for (const t of pos.tickers) positioned.add(t);
-  }
-  // No positions at all (e.g. unit-test fixtures) → don't filter; count
-  // every holding. In production there are always positions, so the
-  // board-scope restriction below applies.
-  const scopeAll = positioned.size === 0;
+  //
+  // Plus the holdings sold out of the board whose ledger survives: their
+  // past is the book's (`bookScope`). Null when there are no positions at
+  // all (unit-test fixtures) → count every holding.
+  const scope = bookScope(portfolio);
 
   for (const [ticker, h] of Object.entries(portfolio.holdings)) {
     if (h.isCash || ticker === 'CASH') continue;
-    if (!scopeAll && !positioned.has(ticker)) continue; // orphaned holding — not on the board
+    if (scope && !scope.has(ticker)) continue; // orphaned holding — not on the board
+    // A holding sold out with no price history at all is left out: priced
+    // by interpolating each row from its own date and cost, its buys and
+    // sales would not net to nothing after its last sale.
+    if (!tickerSeries[ticker] && isSoldOut(h)) continue;
     const { lots, sells } = ledgerFor(h, yearStart);
     const fx = (h.currency && h.currency !== 'USD') ? fxToUSD(h.currency, marketData) : 1;
     const ts = tickerSeries[ticker];
@@ -819,7 +879,7 @@ export function computeAt(opts) {
   let cashUSD = 0;
   for (const [ticker, h] of Object.entries(portfolio.holdings)) {
     if (!(h.isCash || ticker === 'CASH')) continue;
-    if (!scopeAll && !positioned.has(ticker)) continue; // same board-scope as above
+    if (scope && !scope.has(ticker)) continue; // same board-scope as above
     if (typeof h.lastPrice === 'number' && h.lastPrice > 0) cashUSD += h.lastPrice;
   }
   value += cashUSD;

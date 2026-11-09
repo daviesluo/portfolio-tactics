@@ -6,7 +6,10 @@
 // Run locally: `npx --yes deno@1.46.3 test --allow-env supabase/functions/data/`
 
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { foldLedger, keptTickers, netRows, roAnswer, roBoard, roCutoff, roDividends, roOrders } from "./ro_view.ts";
+import {
+  foldLedger, isSoldAlias, isSoldOutHolding, keptTickers, netRows, roAnswer, roBoard, roCutoff, roDividends, roOrders, roScaleSeries,
+  roSnapshotRows, soldAliases, soldInWindow,
+} from "./ro_view.ts";
 import { loadAnswer } from "./index.ts";
 
 // 12:00 UTC on 5 Nov 2026: 1 January is the earlier window start, so the cutoff is 18 Dec 2025.
@@ -192,4 +195,86 @@ Deno.test("loadAnswer: an admin gets the stored board as it is; a read-only toke
   assertEquals(loadAnswer("ro", [], NOW), { data: null, version: 0 });
   // The operator's `check` token (auth?action=check-token, 2026-11-05) gets the viewer's board, never the stored one.
   assertEquals(loadAnswer("check", [{ data: board(), version: 7 }], NOW), ro);
+});
+
+
+// ---- sold-out holdings: an alias and a factor, never the name (Davies, 2026-11-09) ----
+
+/** A board with three closed holdings: one sold out inside the windows, one before the cutoff, one not netting to zero. */
+function soldBoard() {
+  return {
+    positions: { CM: { label: "CM", subtitle: "", role: "MID", tickers: ["ACME"] } },
+    holdings: {
+      ACME: { shares: 2, cost: 10, currency: "USD", lots: [{ date: "2026-03-02", shares: 2, cost: 10 }] },
+      // Sold out on 1 October, inside every window from 3M up.
+      OLDCO: { shares: 0, cost: 0, closed: true, currency: "EUR", lastPrice: 12, prevClose: 11.5, t212Shares: 0, t212Cost: 0,
+        lots: [{ date: "2026-02-02", shares: 4, cost: 8, ts: 1 }, { date: "2026-03-03", shares: 1, cost: 9, ts: 2 }],
+        sells: [{ date: "2026-10-01", shares: 5, price: 12, ts: 3 }] },
+      // Sold out before the cutoff (18 Dec 2025): in no window.
+      PAST: { shares: 0, cost: 0, closed: true, currency: "USD", lots: [{ date: "2025-05-01", shares: 3, cost: 4 }],
+        sells: [{ date: "2025-09-01", shares: 3, price: 5 }] },
+      // Closed but its rows say [•] share is left: not a sold-out ledger this book can price.
+      HALF: { shares: 0, cost: 0, closed: true, currency: "USD", lots: [{ date: "2026-04-01", shares: 3, cost: 4 }],
+        sells: [{ date: "2026-05-01", shares: 2, price: 5 }] },
+      "SAND.SG": { shares: 0, cost: 0, closed: true, currency: "EUR", lots: [{ date: "2026-06-01", shares: 10, cost: 2 }],
+        sells: [{ date: "2026-07-01", shares: 10, price: 3 }] },
+    },
+  };
+}
+
+Deno.test("soldInWindow: closed, netting to zero, with a row on or after the cutoff; not kept by name", () => {
+  assertEquals(soldInWindow(soldBoard(), NOW), ["OLDCO", "SAND.SG"]);
+  assertEquals(isSoldOutHolding(soldBoard().holdings.HALF, NOW), false);
+  assertEquals(isSoldOutHolding(soldBoard().holdings.PAST, NOW), true);
+});
+
+Deno.test("soldAliases: the same alias and factor on every call, a suffix kept, nothing without a secret", async () => {
+  const a = await soldAliases(soldBoard(), NOW, "made-up-secret");
+  const b = await soldAliases(soldBoard(), NOW, "made-up-secret");
+  assertEquals(a, b);
+  assertEquals(a.map((x) => x.ticker), ["OLDCO", "SAND.SG"]);
+  assertEquals(a.every((x) => isSoldAlias(x.alias)), true);
+  assertEquals(a[1].alias.endsWith(".SG"), true);
+  assertEquals(a.some((x) => x.alias.includes("OLDCO") || x.alias.includes("SAND")), false);
+  // r between 1 and [•] over the first cost: OLDCO's first cost is 8, SAND's 2.
+  assertEquals(a[0].k * 8 >= 1 && a[0].k * 8 < 10, true);
+  assertEquals(a[1].k * 2 >= 1 && a[1].k * 2 < 10, true);
+  // Another secret, other aliases.
+  const c = await soldAliases(soldBoard(), NOW, "another-secret");
+  assertEquals(c[0].alias === a[0].alias, false);
+  assertEquals(await soldAliases(soldBoard(), NOW, ""), []);
+});
+
+Deno.test("roBoard: a sold-out holding goes out under its alias, rescaled, synced at zero, never by name", () => {
+  const sold = [{ ticker: "OLDCO", alias: "ZABCDEFG", k: 0.5 }];
+  const out = roBoard(soldBoard(), NOW, sold) as { holdings: Record<string, Record<string, unknown>> };
+  assertEquals(Object.keys(out.holdings).sort(), ["ACME", "ZABCDEFG"]);
+  assertEquals(out.holdings.ZABCDEFG, {
+    shares: 0, cost: 0, closed: true, currency: "EUR", lastPrice: 6, prevClose: 5.75,
+    lots: [{ date: "2026-02-02", shares: 8, cost: 4 }, { date: "2026-03-03", shares: 2, cost: 4.5 }],
+    sells: [{ date: "2026-10-01", shares: 10, price: 6 }],
+    t212Shares: 0, t212Cost: 0,
+  });
+  assertEquals(JSON.stringify(out).includes("OLDCO"), false);
+});
+
+Deno.test("roOrders / roAnswer: a sold-out holding's fills and slice under its alias, rescaled and folded", () => {
+  const sold = [{ ticker: "OLDCO", alias: "ZABCDEFG", k: 2 }];
+  const fill = (side: string, d: string, shares: number, price: number) =>
+    ({ id: `${d}-${side}`, account: "isa", ticker: "OLDCO", side, shares, price, executed_at: `${d}T14:30:00+00:00`, currency: "EUR" });
+  const orders = roOrders([fill("buy", "2026-02-02", 4, 8), fill("sell", "2026-10-01", 4, 12)], new Set(["ACME"]), NOW, sold);
+  assertEquals(orders, [
+    { ticker: "ZABCDEFG", side: "buy", shares: 2, price: 16, executed_at: "2026-02-02T00:00:00Z", currency: "EUR" },
+    { ticker: "ZABCDEFG", side: "sell", shares: 2, price: 24, executed_at: "2026-10-01T00:00:00Z", currency: "EUR" },
+  ]);
+  const answer = roAnswer({ holdings: { OLDCO: { shares: 0, cost: 8, previousShares: 4 } }, prices: { OLDCO: 12 }, complete: true },
+    new Set(["ACME"]), sold);
+  assertEquals(answer, { holdings: { ZABCDEFG: { shares: 0, cost: 16, previousShares: 2 } }, prices: { ZABCDEFG: 24 }, complete: true });
+});
+
+Deno.test("roSnapshotRows: the board's tickers, a sold-out one under its alias rescaled, nothing else", () => {
+  const rows = [{ ts: "2026-10-01T14:00:00Z", prices: { ACME: 10, OLDCO: 12, GONEFOREVER: 3 } }];
+  assertEquals(roSnapshotRows(rows, new Set(["ACME"]), [{ ticker: "OLDCO", alias: "ZABCDEFG", k: 0.5 }]),
+    [{ ts: "2026-10-01T14:00:00Z", prices: { ACME: 10, ZABCDEFG: 6 } }]);
+  assertEquals(roScaleSeries([{ date: "2026-10-01", close: 12, volume: 5 }], 0.5), [{ date: "2026-10-01", close: 6, volume: 5 }]);
 });

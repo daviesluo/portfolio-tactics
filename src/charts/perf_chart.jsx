@@ -1158,7 +1158,8 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
       const sincePrevClose = dayBasis != null ? ((value - dayBasis) / dayBasis) * 100 : null;
       // `value` is the book in dollars at this point — the Investment view
       // draws exactly this, so it is by construction the same number the
-      // vs-S&P view turns into a percentage.
+      // vs-S&P view turns into a percentage. Both count a holding sold out
+      // of the board until its sale (`bookScope`, ytd.js).
       return { date, pct, value, sincePrevClose };
     });
     return { portYtd, recordedFrom, dayBasis };

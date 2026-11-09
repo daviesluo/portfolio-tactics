@@ -6,7 +6,7 @@
 // arithmetic, and reads the numbers back out of the DOM.
 //
 // The fixture is deliberately tiny so every expected figure can be done
-// on paper:
+// on paper (three books: buys-only, sold-down and rotated, below):
 //
 //   ACME  [•] shares, bought [•]-[•]-[•] at $[•]
 //   CASH  $[•]
@@ -151,12 +151,40 @@ const PORTFOLIO_SOLD = {
   },
 };
 
+// The buys-only book reached by a ROTATION (Davies, [•]-[•]-[•]: a switch read as new money): OLD, bought on [•] January
+// and sold out in full ten days ago (closed, on no position, its ledger kept), paid for ACME's ten shares the same day.
+// The line counts OLD until its sale (`bookScope`, ytd.js), so every figure is the buys-only book's:
+//
+//   OLD    [•] bought at [•] on [•] Jan, all [•] sold at [•] ten days ago ([•]); bars as ACME's, [•] -> [•] -> [•]
+//   ACME   [•] bought at [•] ten days ago with that [•]
+//   value  YTD [•] (OLD [•] x [•] + [•]) -> [•] -> [•] (ACME [•] x [•] + [•]): +[•]%
+//   basis  YTD  OLD at its window-start close [•] then its [•] out and ACME's [•] in: [•] throughout
+//          1D-[•] every bar here is in the latest session, after the rotation: OLD nets to nothing and ACME's lot
+//          is before the first point, valued at the anchor, as buys-only
+//   deposited  [•] + [•] cash, then [•] - [•] + [•] + [•]: [•] flat, +[•]%
+//
+// Leaving OLD out (until [•]-[•]-[•]) read YTD's value +[•]% and Deposited +[•]% ([•] -> [•] not flat) and its
+// vs-S&P line +[•]%: [•] failures, the YTD cases of this book at each data state, measured on the old code.
+const PORTFOLIO_ROTATED = {
+  ...PORTFOLIO,
+  holdings: {
+    ...PORTFOLIO.holdings,
+    ACME: { ...PORTFOLIO.holdings.ACME, cost: 240, lots: [{ date: dayAgo(10), shares: 10, cost: 240 }] },
+    OLD: {
+      shares: 0, cost: 0, lastPrice: 240, currency: 'USD', closed: true,
+      lots: [{ date: D(1, 2), shares: 10, cost: 150 }],
+      sells: [{ date: dayAgo(10), shares: 10, price: 240 }],
+    },
+  },
+};
+
 // Which book the fixture server hands out, and what it should read.
 // `day` / `dayFirst`: 24H with extended hours off, from the previous close
 // (the header's arithmetic).
 const BOOKS = [
   { name: 'buys-only', portfolio: PORTFOLIO, move: '+16.00%', day: '+7.41%', dayFirst: -7.41 },
   { name: 'sold-down', portfolio: PORTFOLIO_SOLD, move: '+14.12%', day: '+6.59%', dayFirst: -6.59 },
+  { name: 'rotated', portfolio: PORTFOLIO_ROTATED, move: '+16.00%', day: '+7.41%', dayFirst: -7.41 },
 ];
 const DAY_SP = '+0.97%';
 const DAY_SP_FIRST = -2.91;
