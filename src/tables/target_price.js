@@ -17,7 +17,7 @@
 //     or Fresh avg vs price, while the table is sorted by Fresh range (Davies, 2026-10-21): the mean of the targets
 //                   set in the last 30 days against the price, fresh mean / price − 1; "—" where none was set,
 //                   which sorts last. Any other sort brings back Avg vs price.                                  LIVE
-//   Key risks       a short note per holding, kept by hand (target_risks.js).
+//   Key risks       a short note per holding, kept by hand, served by the `targets` GET (target_risks.js).
 //
 // LIVE (Weight, Price and the % column's price): worked out here from the board's own `metrics` on every render, so they move at the board's tick (Davies,
 // 2026-10-21): the page re-renders with each new `metrics` and asks nothing of the server. Every other column is the
@@ -29,7 +29,7 @@
 
 import { buildHoldingsRows } from './holdings_list.jsx';
 import { displayTicker } from '../app/formatters.js';
-import { risksFor, risksFromServed, TARGET_RISKS } from './target_risks.js';
+import { risksFor, risksFromServed } from './target_risks.js';
 import { fmtMoney, fmtPct } from '../app/formatters.js';
 import { currencyAffix } from '../portfolio/fx.js';
 
@@ -89,9 +89,9 @@ export function buildTargetRows(metrics, data, nowMs) {
   const players = new Map();
   for (const pos of Object.values(metrics?.positions || {})) for (const p of (/** @type {any} */ (pos).players || [])) players.set(p.ticker, p);
   const snaps = data?.rows || {};
-  // Key risks: the ones the GET serves from the hand-targets branch when it does (Grok keeps them, hand.ts), else the
-  // bundled copy. Either way a dated note drops out after its day (risksFor).
-  const riskMap = risksFromServed(/** @type {any} */ (data)?.risks?.risks) ?? TARGET_RISKS;
+  // Key risks: the ones the GET serves (the hand-targets branch's, Grok keeps them, hand.ts; else the function's baked
+  // copy). None served, none shown. A dated note drops out after its day (risksFor).
+  const riskMap = risksFromServed(/** @type {any} */ (data)?.risks?.risks) ?? {};
   return holdings.map((h) => {
     const p = players.get(h.ticker) || {};
     const display = displayTicker(h.ticker);

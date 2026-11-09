@@ -7,7 +7,7 @@
 // function's one-minute call checks the branch head every HAND_CHECK_MS; when it moved, it reads both files AT THAT
 // COMMIT (an immutable URL, so the raw CDN's few minutes of staleness cannot serve the old file), validates them whole,
 // keeps them in the state row and rebuilds the bitcoin and IWDA rows from them. A file that fails any check is not used
-// at all: the copies baked into the code (`strategists.ts`, the page's `target_risks.js`) stand instead, and the failure
+// at all: the copies baked into the code (`strategists.ts`, `baked_risks.ts`) stand instead, and the failure
 // is reported once, when it starts, not every minute. The main session still copies the branch into the code each day,
 // so the baked copies stay current.
 //

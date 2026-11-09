@@ -29,7 +29,7 @@ import {
 import { useTickerFundamentals } from './use_ticker_fundamentals.js';
 import { useTickerChartData } from './use_ticker_chart_data.js';
 import { ScreenshotActions } from './screenshot_actions.jsx';
-import { COMPANY_NAMES } from '../tables/holdings_list.jsx';
+import { COMPANY_NAMES } from '../tables/company_names.js';
 
 // Ticker classification predicates moved to `src/prices/ticker_class.js` so
 // the modal, prefetch, header_sidebar, etc. all share one definition

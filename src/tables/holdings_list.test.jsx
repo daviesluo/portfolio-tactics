@@ -136,11 +136,18 @@ describe('HoldingsListModal', () => {
 // The site is English-only. A Chinese fund's own name (005827 shipped as
 // its Chinese title) showed up in the holding list and the chart modal.
 describe('COMPANY_NAMES', () => {
-  it('holds only English names — no CJK characters reach the page', () => {
-    const cjk = /[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/;
-    const offenders = Object.entries(COMPANY_NAMES).filter(([, name]) => cjk.test(name));
-    expect(offenders).toEqual([]);
-    expect(COMPANY_NAMES['005827']).toBe('E Fund Blue Chip Select Mixed');
+  // The map itself lives in the `data` function since 2026-11-09 (its English-only pin is there, company_names.test.ts):
+  // the bundle carried every holding the book ever had to every visitor. The page holds what the `load` answer sent.
+  it('starts empty and holds what the load answer sent, replaced whole by the next', async () => {
+    const { setCompanyNames } = await import('./company_names.js');
+    expect(COMPANY_NAMES).toEqual({});
+    setCompanyNames({ NVDA: 'NVIDIA Corporation', BAD: 7 });
+    expect(COMPANY_NAMES).toEqual({ NVDA: 'NVIDIA Corporation' });
+    expect(buildHoldingsRows(METRICS).find((r) => r.ticker === 'NVDA')?.name).toBe('NVIDIA Corporation');
+    setCompanyNames({ ACME: 'Acme' });
+    expect(COMPANY_NAMES).toEqual({ ACME: 'Acme' });
+    setCompanyNames(null);
+    expect(COMPANY_NAMES).toEqual({});
   });
 });
 

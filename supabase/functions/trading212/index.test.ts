@@ -1009,3 +1009,27 @@ Deno.test("answerFor: a read-only token gets the kept tickers' slices and prices
   assertEquals(out.holdings, { ACME: { shares: 1, cost: 20, previousShares: 1, previousCost: 20 } });
   assertEquals(out.prices, { ACME: 21 });
 });
+
+// Davies, 2026-11-09: a holding sold out at Trading 212 keeps its slot's key; until that day the key alone sent it to a
+// viewer by name. Its fills, slice and dividends must reach a viewer under its alias alone, never by name.
+Deno.test("answerFor: a slot-keyed closed holding is never named to a viewer, in any answer", async () => {
+  const { keptTickers, soldAliases } = await import("../data/ro_view.ts");
+  const board = {
+    positions: { CM: { label: "CM", subtitle: "", role: "MID", tickers: ["ACME"] } },
+    holdings: {
+      ACME: { shares: 3, cost: 13, currency: "USD", lots: [{ date: "2026-03-02", shares: 3, cost: 13 }] },
+      GONE: { shares: 0, cost: 0, closed: true, currency: "USD", t212Shares: 0, t212Cost: 0, t212PositionKey: "CM",
+        lots: [{ date: "2026-01-02", shares: 3, cost: 3 }], sells: [{ date: "2026-03-02", shares: 3, price: 4 }] },
+    },
+  };
+  const kept = keptTickers(board);
+  assertEquals([...kept].sort(), ["ACME"]);
+  const sold = await soldAliases(board, RO_NOW, "a made-up secret");
+  for (const [kind, body] of [["orders", RO_ORDERS], ["dividends", RO_DIVS], ["positions", RO_POSITIONS]] as const) {
+    const out = JSON.stringify(answerFor("ro", kind, body as Record<string, unknown>, kept, RO_NOW, sold));
+    assertEquals(out.includes("GONE"), false, kind);
+  }
+  // The fills and the slice went out under the alias.
+  const orders = answerFor("ro", "orders", RO_ORDERS, kept, RO_NOW, sold) as { orders: Array<{ ticker: string }> };
+  assertEquals(orders.orders.some((o) => o.ticker === sold[0].alias), true);
+});

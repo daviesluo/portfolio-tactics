@@ -452,3 +452,27 @@ export function roAnswer(body: unknown, kept: Set<string>, sold: SoldAlias[] = [
   if ("prices" in out) out.prices = only(out.prices, (v, k) => (k === 1 || !Number.isFinite(Number(v)) ? v : Number(v) * k));
   return out;
 }
+
+/** The ticker the page shows for a holding (`displayTicker`, src/app/formatters.js): its listing suffix dropped, MBG as SAND. */
+const shownAs = (t: string) => {
+  const base = t.replace(/\.[A-Za-z]{1,4}$/, "");
+  return base === "MBG" ? "SAND" : base;
+};
+
+/**
+ * What a read-only token is sent of the targets (Davies, 2026-11-09: "访客可以看不到历史记录"): the rows and the Key risks
+ * of the holdings its board shows (`kept`), nothing of a holding sold or never held (an alias none): the `targets` GET's
+ * answer to any token but an admin's. The job keeps a row for every holding the book ever had; a viewer was sent all of
+ * them, so the page named every sold one.
+ */
+export function roTargets(body: unknown, kept: Set<string>): unknown {
+  if (!body || typeof body !== "object") return body;
+  const b = body as Row;
+  const shown = new Set([...kept].map(shownAs));
+  const rows = Object.fromEntries(Object.entries(isObj(b.rows) ? b.rows : {}).filter(([t]) => kept.has(t)));
+  const r = isObj(b.risks) ? b.risks : null;
+  const risks = r && isObj(r.risks)
+    ? { ...r, risks: Object.fromEntries(Object.entries(r.risks).filter(([t]) => shown.has(t) || kept.has(t))) }
+    : b.risks ?? null;
+  return { ...b, rows, risks };
+}

@@ -20,6 +20,7 @@
 import { reportServerError } from "../_shared/ops.ts";
 import { verifyToken } from "../_shared/token.ts";
 import { keptTickers, roBoard, roSnapshotRows, soldAliases, type SoldAlias } from "./ro_view.ts";
+import { namesFor } from "./company_names.ts";
 
 const APP_AUTH_SECRET = Deno.env.get("APP_AUTH_SECRET") ?? "";
 
@@ -69,11 +70,16 @@ const SB_HEADERS = {
  * data and version 0 for both, so the client's
  * optimistic-concurrency state has a starting point (an If-Match of 0 succeeds on the first save). Pure, for testing.
  */
-export function loadAnswer(role: "admin" | "ro" | "check", rows: unknown, nowMs: number, sold: SoldAlias[] = []): { data: unknown; version: number } {
+export function loadAnswer(role: "admin" | "ro" | "check", rows: unknown, nowMs: number, sold: SoldAlias[] = []): { data: unknown; version: number; names?: Record<string, string> } {
   if (!Array.isArray(rows) || rows.length === 0) return { data: null, version: 0 };
   const row = rows[0] ?? {};
   const version = typeof row.version === "number" ? row.version : 0;
-  return { data: role === "admin" ? row.data : roBoard(row.data, nowMs, sold), version };
+  const data = role === "admin" ? row.data : roBoard(row.data, nowMs, sold);
+  // The company names of the holdings sent, and no others (./company_names.ts): the page bundled the whole map until
+  // 2026-11-09, every holding the book ever had.
+  const holdings = data && typeof data === "object" && (data as { holdings?: unknown }).holdings;
+  const names = namesFor(holdings && typeof holdings === "object" ? Object.keys(holdings) : []);
+  return { data, version, names };
 }
 
 /** The stored board, or null when it could not be read. */

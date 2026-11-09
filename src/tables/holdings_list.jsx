@@ -11,57 +11,9 @@ import { fmtMoney as fmtM, fmtPct as fmtPc, pctColor as pctClr, maskDigits } fro
 import { holdingsRowsToMatrix } from './holdings_export.js';
 import { TableExportButtons } from './table_export.jsx';
 
-// Company names for the holdings table's secondary line. Static map —
-// the app has no client-side name source for equities (Yahoo provides
-// them but threading a name through the chart/fundamentals pipelines
-// for one cosmetic column isn't worth the risk). Unknown tickers fall
-// back to "--" (matching the Yahoo reference, where a name it lacks
-// shows "--"). Extend this map as holdings change.
-export const COMPANY_NAMES = {
-  'NVDA': 'NVIDIA Corporation',
-  'ABT': 'Abbott Laboratories',
-  'APLD': 'Applied Digital Corporation',
-  'NBIS': 'Nebius Group',
-  'GOOGL': 'Alphabet Inc. (Class A)',
-  'SPAX.PVT': 'SpaceX',
-  'SYK': 'Stryker Corporation',
-  'META': 'Meta Platforms, Inc.',
-  'KO': 'The Coca-Cola Company',
-  'AMGN': 'Amgen Inc.',
-  'HD': 'The Home Depot',
-  'MSFT': 'Microsoft Corporation',
-  'MSTR': 'Strategy (MicroStrategy)',
-  'AMZN': 'Amazon.com, Inc.',
-  'DIS': 'The Walt Disney Company',
-  'RKLB': 'Rocket Lab Corporation',
-  'NEE': 'NextEra Energy, Inc.',
-  'BTC-USD': 'Bitcoin',
-  'ADBE': 'Adobe Inc.',
-  'XOM': 'Exxon Mobil Corporation',
-  'HOOD': 'Robinhood Markets',
-  'TSM': 'Taiwan Semiconductor',
-  'WMT': 'Walmart Inc.',
-  'NVTS': 'Navitas Semiconductor',
-  'MU': 'Micron Technology',
-  'INTU': 'Intuit Inc.',
-  'MCD': 'McDonald’s Corporation',
-  'UNP': 'Union Pacific Corporation',
-  'HON': 'Honeywell International',
-  'PEP': 'PepsiCo, Inc.',
-  'BMNR': 'Bitmine Immersion',
-  'CAT': 'Caterpillar Inc.',
-  'ORLY': 'O’Reilly Automotive',
-  'BF-B': 'Brown-Forman Corporation',
-  'SPCX': 'Space Exploration Technologies Corp.',
-  'PLTR': 'Palantir Technologies Inc.',
-  'BE': 'Bloom Energy Corporation',
-  'NKE': 'NIKE, Inc.',
-  'NSRGY': 'Nestlé S.A.',
-  'CVX': 'Chevron Corporation',
-  'VWRL.L': 'Vanguard FTSE All-World UCITS ETF',
-  'IWDA.L': 'iShares Core MSCI World UCITS ETF (Acc)',
-  '005827': 'E Fund Blue Chip Select Mixed',
-};
+// Company names (ticker → name), filled from the `load` answer: company_names.js.
+export { COMPANY_NAMES } from './company_names.js';
+import { COMPANY_NAMES } from './company_names.js';
 
 /**
  * Flatten `metrics` into one row per holding (cash excluded). Each row

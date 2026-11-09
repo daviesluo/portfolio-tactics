@@ -73,6 +73,9 @@ describe('Target price rows', () => {
   it('a holding with no targets: every target figure null, and its risk note still there', () => {
     const r = by('MBG.SG');
     expect([r.kind, r.mean, r.low, r.lowVsPrice, r.rating, r.analysts, r.fresh]).toEqual([null, null, null, null, null, null, null]);
+    // Its note still there, as served (the GET's risks; the page carries none of its own since 2026-11-09).
+    const served = buildTargetRows(METRICS, /** @type {any} */ ({ ...DATA, risks: { asOf: '2026-10-21', risks: { SAND: [{ text: 'Only one firm covers it' }] } } }), NOW);
+    expect(served.find((x) => x.ticker === 'MBG.SG')?.risks).toBe('Only one firm covers it');
     // No copy at all yet: the rows are there, every one uncovered.
     expect(buildTargetRows(METRICS, null, NOW).map((x) => x.kind)).toEqual([null, null, null, null, null]);
   });
@@ -185,15 +188,17 @@ describe('IWDA from the […] strategists (Davies, 2026-10-21)', () => {
   });
 });
 
-describe('Key risks: the served copy first, the bundled one as the fallback', () => {
-  it('uses the GET\'s risks when it serves them, and the bundled notes when it does not', () => {
+describe('Key risks: the served copy, and none when none is served', () => {
+  it('uses the GET\'s risks when it serves them, and shows none when it does not', () => {
     const served = { ...DATA, risks: { asOf: '2026-10-22', risks: { RKLB: [{ text: 'Served note' }, { text: '@lowest-target' }], SAND: [{ text: 'Served SAND' }] } } };
     const withServed = buildTargetRows(METRICS, served, NOW);
     expect(withServed.find((r) => r.ticker === 'RKLB')?.risks).toBe('Served note; lowest target $60 still 20% above price');
     expect(withServed.find((r) => r.ticker === 'MBG.SG')?.risks).toBe('Served SAND');
     // A ticker the served file leaves out has no note (the file is the whole table when it is in force).
     expect(withServed.find((r) => r.ticker === 'SYK')?.risks).toBe('');
-    // No served risks (the branch failed its checks): the bundled notes.
+    // No served risks: no note. The page bundled its own until 2026-11-09, naming every holding they were written for to
+    // every visitor; the function now serves its baked copy when the branch fails its checks (baked_risks.ts).
+    expect(buildTargetRows(METRICS, DATA, NOW).map((r) => r.risks)).toEqual(['', '', '', '', '']);
   });
 });
 

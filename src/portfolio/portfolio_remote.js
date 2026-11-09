@@ -9,6 +9,7 @@ import { SB_ANON, EDGE_DATA_URL } from '../app/supabase_config.js';
 import { getAppToken, noteAuthStatus } from '../app/auth.js';
 import { detectCurrency } from './fx.js';
 import { INITIAL_PORTFOLIO } from './data.js';
+import { setCompanyNames } from '../tables/company_names.js';
 import { reportError } from '../app/ops_error.js';
 import { netPosition } from './transactions.js';
 import { Storage } from '../app/storage.js';
@@ -136,6 +137,8 @@ export async function loadPortfolioRemote() {
       lastKnownVersion = body.version;
     }
     const data = body?.data;
+    // The company names of the holdings this answer sends (the `data` function's map, never the bundle's since 2026-11-09).
+    if (body && 'names' in body) setCompanyNames(body.names);
     if (data) {
       const loaded = migrate(data);
       if (!loaded.holdings || Object.keys(loaded.holdings).length === 0) {

@@ -1,7 +1,15 @@
-// Pins the Target price page's Key risks (target_risks.js): Davies's five notes, keyed by the ticker the page shows, a
+// Pins the Target price page's Key risks (target_risks.js, the notes in supabase/functions/targets/baked_risks.ts): Davies's five notes, keyed by the ticker the page shows, a
 // dated note dropping out the day after its date in New York, and RKLB's lowest target worked out from the row.
 import { describe, expect, it } from 'vitest';
-import { nyDate, risksFor, TARGET_RISKS } from './target_risks.js';
+import { nyDate, risksFor as risksForMap, risksFromServed } from './target_risks.js';
+
+// The notes ship from the `targets` function since 2026-11-09 (never in the page's bundle); these pins read them as the page
+// gets them, through `risksFromServed`. A computed path, so the type-checker leaves the Deno module to Deno.
+const BAKED = new URL('../../supabase/functions/targets/baked_risks.ts', import.meta.url).href;
+const { BAKED_RISKS } = await import(/* @vite-ignore */ BAKED);
+const TARGET_RISKS = /** @type {Record<string, any[]>} */ (risksFromServed(BAKED_RISKS.risks));
+/** @param {string} d @param {any} r @param {number} n @param {any} [m] */
+const risksFor = (d, r, n, m = TARGET_RISKS) => risksForMap(d, r, n, m);
 
 const at = (iso) => Date.parse(iso);
 const row = { low: null, price: null, lowVsPrice: null };

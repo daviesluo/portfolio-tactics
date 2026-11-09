@@ -200,7 +200,7 @@ Deno.test("loadAnswer: an admin gets the stored board as it is; a read-only toke
   assertEquals(admin.data, stored);
   assertEquals(Object.keys(admin.data as object).sort(), ["depositFxRates", "holdings", "positions", "snapshots"]);
   const ro = loadAnswer("ro", [{ data: board(), version: 7 }], NOW);
-  assertEquals(ro, { data: roBoard(board(), NOW), version: 7 });
+  assertEquals(ro, { data: roBoard(board(), NOW), version: 7, names: {} });
   assertEquals(Object.keys(ro.data as object).sort(), ["holdings", "positions"]);
   assertEquals(loadAnswer("ro", [], NOW), { data: null, version: 0 });
   // The operator's `check` token (auth?action=check-token, 2026-11-05) gets the viewer's board, never the stored one.

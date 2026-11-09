@@ -14,6 +14,7 @@ import { type Analyst, consensusSnapshot, holdingsSnapshot, parseAnalyst, parseB
 import { dueSlot } from "./schedule.ts";
 import { INDEX_TARGETS, STRATEGIST_TARGETS } from "./strategists.ts";
 import { checkHand, type HandState, type HandTargets } from "./hand.ts";
+import { BAKED_RISKS } from "./baked_risks.ts";
 
 export const TARGETS_TABLE = "analyst_targets";
 export const TARGETS_STATE = "analyst_targets_state";
@@ -281,7 +282,8 @@ export async function readTargets(db: Db) {
   return {
     slot, asOf: st[0]?.updated_at ?? null,
     rows: Object.fromEntries(rows.map((r) => [r.ticker, { ...r.payload, slot: r.slot, asOf: r.as_of }])),
-    risks: loaded ? hand!.risks : null,
+    // The hand-kept notes when loaded, else the baked copy: the page carries none of its own since 2026-11-09.
+    risks: loaded ? hand!.risks : BAKED_RISKS,
     hand: hand ? { sha: hand.sha, via: hand.via, checkedAt: hand.checkedAt ? new Date(hand.checkedAt).toISOString() : null, targetsAsOf: hand.targets?.asOf ?? null, risksAsOf: hand.risks?.asOf ?? null, error: hand.error } : null,
   };
 }
