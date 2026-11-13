@@ -269,3 +269,44 @@ export function findPrevSessionCloseIdx(series) {
   }
   return -1;
 }
+
+// A board slot's day starts at 00:00 UTC, not London midnight: the
+// server counts its TODAY from `Math.floor(now / 86400e3) * 86400e3`,
+// and the board's day figure is that TODAY as each mark recorded it.
+// Davies, 2026-11-13: "在0:00加一条竖虚线…让我知道day收益的分界线".
+export const UTC_DAY_MS = 86400e3;
+
+/**
+ * Every 00:00 UTC strictly inside (fromMs, toMs), oldest first: none for
+ * a window inside one day, one a day across several. An instant exactly
+ * on an edge is the edge, not a boundary inside the window.
+ * @param {number} fromMs @param {number} toMs
+ * @returns {number[]}
+ */
+export function utcMidnightsIn(fromMs, toMs) {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs) return [];
+  const out = [];
+  for (let m = Math.floor(fromMs / UTC_DAY_MS) * UTC_DAY_MS + UTC_DAY_MS; m < toMs; m += UTC_DAY_MS) out.push(m);
+  return out;
+}
+
+/**
+ * The index-based twin of `utcMidnightsIn`, for a chart that spaces its
+ * bars by index (the ticker modal): each bar that is the first one on a
+ * new UTC day, never the first bar. Bars are `YYYY-MM-DDTHH:MM` (UTC).
+ * @param {Array<{date?: string}> | null} series
+ * @returns {number[]}
+ */
+export function utcMidnightIdxs(series) {
+  if (!Array.isArray(series)) return [];
+  const out = [];
+  let prevDay = NaN;
+  for (let i = 0; i < series.length; i++) {
+    const t = parseChartDateUTC(/** @type {any} */ (series[i]?.date)).getTime();
+    if (!Number.isFinite(t)) continue;
+    const day = Math.floor(t / UTC_DAY_MS);
+    if (Number.isFinite(prevDay) && day > prevDay) out.push(i);
+    prevDay = day;
+  }
+  return out;
+}

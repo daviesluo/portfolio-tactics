@@ -16,7 +16,8 @@ import {
   vwapSessionResetFor, vwapSessionKeyOf, computeVwap,
   extPriceIsRealAh, isPriceAxis,
 } from './indicators.js';
-import { pointerToDataIndex, overnightTrailingGap, parseChartDateUTC, findRegularCloseIdx, findRegularOpenIdx, findPrevSessionCloseIdx, overnightDotWithinReach } from './chart_geometry.js';
+import { pointerToDataIndex, overnightTrailingGap, parseChartDateUTC, findRegularCloseIdx, findRegularOpenIdx, findPrevSessionCloseIdx, overnightDotWithinReach, utcMidnightIdxs } from './chart_geometry.js';
+import { SessionLine, dayLineLabel } from './session_line.jsx';
 import { computeChartGeometry } from './chart_modal_geometry.js';
 import { mergeOvernightSeries } from '../prices/overnight_intraday.js';
 import { fourHourSlots, SLOTS_PER_DAY } from '../prices/market_hours.js';
@@ -289,6 +290,12 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
       }
     }
   }
+  // A private-module holding has no session: its day, where its TODAY and the board's DAY CHANGE start, is
+  // 00:00 UTC (chart_geometry.js `UTC_DAY_MS`). A dashed line at each one on its short ranges (Davies, 2026-11-13: "在0:00加一条
+  // 竖虚线…让我知道day收益的分界线"). Its 1D is today's marks alone (`windowedSeries`), so none falls inside it: 1W draws one a day.
+  const dayLineIdxs = (isStrategyHolding(ticker) && (rangeKey === '1D' || rangeKey === '1W'))
+    ? utcMidnightIdxs(displaySeries)
+    : [];
 
   // Anchor for % calculation. 1D anchors at "the most recent 16:00 ET
   // regular close that has occurred":
@@ -961,37 +968,17 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
               {/* Vertical dashed CLOSE line. In ext mode this is today's
                   close; in regular mode it's yesterday's close (= the
                   prevClose the % anchors at). */}
-              {regularCloseIdx >= 0 && (() => {
-                const x = xOfIdx(regularCloseIdx).toFixed(1);
-                return (
-                  <g>
-                    <line x1={x} y1={padT} x2={x} y2={H - padB}
-                          stroke="var(--chalk-dim)" strokeWidth="0.8" strokeDasharray="3,4" opacity="0.6" />
-                    <text x={x} y={padT - 4} textAnchor="middle"
-                          fontSize="8.5" fill="var(--chalk-dim)" fontFamily="var(--font-mono)">
-                      CLOSE
-                    </text>
-                  </g>
-                );
-              })()}
+              {regularCloseIdx >= 0 && <SessionLine x={xOfIdx(regularCloseIdx)} y0={padT} y1={H - padB} label="CLOSE" />}
               {/* Vertical dashed line at today's regular open (1D in
                   regular session). Mirror of the CLOSE marker for the
                   ext-AH case — the chart now always fetches with
                   prepost when phase==='regular', so the OPEN bar is
                   somewhere in the middle of the data, not at index 0. */}
-              {regularOpenIdx >= 0 && (() => {
-                const x = xOfIdx(regularOpenIdx).toFixed(1);
-                return (
-                  <g>
-                    <line x1={x} y1={padT} x2={x} y2={H - padB}
-                          stroke="var(--chalk-dim)" strokeWidth="0.8" strokeDasharray="3,4" opacity="0.6" />
-                    <text x={x} y={padT - 4} textAnchor="middle"
-                          fontSize="8.5" fill="var(--chalk-dim)" fontFamily="var(--font-mono)">
-                      OPEN
-                    </text>
-                  </g>
-                );
-              })()}
+              {regularOpenIdx >= 0 && <SessionLine x={xOfIdx(regularOpenIdx)} y0={padT} y1={H - padB} label="OPEN" />}
+              {/* 00:00 UTC on a private-module holding: where its TODAY starts (`dayLineIdxs`). */}
+              {dayLineIdxs.map((i) => (
+                <SessionLine key={`day${i}`} className="session-line day-line" x={xOfIdx(i)} y0={padT} y1={H - padB} label={dayLineLabel(dayLineIdxs.length)} />
+              ))}
               {/* VWAP overlay (1D only, when bar volume is available).
                   Drawn before the price path so the active price line
                   stays on top. Same gray + label-in-right-margin

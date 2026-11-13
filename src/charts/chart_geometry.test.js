@@ -5,7 +5,7 @@
 // chart now fails CI before deploy.
 
 import { describe, expect, it } from 'vitest';
-import { pointerToDataIndex, pointsToSvgPath, overnightTrailingGap, parseChartDateUTC, findRegularCloseIdx, findRegularOpenIdx, findPrevSessionCloseIdx, overnightDotWithinReach } from './chart_geometry.js';
+import { pointerToDataIndex, pointsToSvgPath, overnightTrailingGap, parseChartDateUTC, findRegularCloseIdx, findRegularOpenIdx, findPrevSessionCloseIdx, overnightDotWithinReach, utcMidnightsIn, utcMidnightIdxs } from './chart_geometry.js';
 
 // Fake an SVG element with just the surface the helper touches.
 function fakeSvg(rect) {
@@ -391,5 +391,42 @@ describe('findPrevSessionCloseIdx', () => {
     expect(findPrevSessionCloseIdx(null)).toBe(-1);
     expect(findPrevSessionCloseIdx([])).toBe(-1);
     expect(findPrevSessionCloseIdx([{ date: '2026-06-04T09:00' }, { close: 1 }])).toBe(-1);
+  });
+});
+
+// 00:00 UTC, where a board strategy's TODAY starts (Davies, 2026-11-13: "在0:00加一条竖虚线…让我知道day收益的分界线").
+describe('utcMidnightsIn: the 00:00 UTC instants inside a window', () => {
+  const at = (/** @type {string} */ s) => Date.parse(s);
+  it('a 24-hour window across one midnight holds that one', () => {
+    expect(utcMidnightsIn(at('2026-11-12T12:00Z'), at('2026-11-13T12:00Z'))).toEqual([at('2026-11-13T00:00Z')]);
+  });
+  it('a window across two days holds both, oldest first', () => {
+    expect(utcMidnightsIn(at('2026-11-11T22:00Z'), at('2026-11-13T01:00Z'))).toEqual([at('2026-11-12T00:00Z'), at('2026-11-13T00:00Z')]);
+  });
+  it('a window inside one day holds none, nor does one that starts or ends exactly on midnight (its edge)', () => {
+    expect(utcMidnightsIn(at('2026-11-13T00:05Z'), at('2026-11-13T23:55Z'))).toEqual([]);
+    expect(utcMidnightsIn(at('2026-11-13T00:00Z'), at('2026-11-13T23:00Z'))).toEqual([]);
+    expect(utcMidnightsIn(at('2026-11-12T20:00Z'), at('2026-11-13T00:00Z'))).toEqual([]);
+  });
+  it('UTC, not London: in BST London midnight is 23:00 UTC, and the line is at 00:00 UTC (01:00 London)', () => {
+    expect(utcMidnightsIn(at('2026-07-01T12:00Z'), at('2026-07-02T12:00Z'))).toEqual([at('2026-07-02T00:00Z')]);
+  });
+  it('nothing for an empty, reversed or unreadable window', () => {
+    expect(utcMidnightsIn(5, 5)).toEqual([]);
+    expect(utcMidnightsIn(at('2026-11-13T12:00Z'), at('2026-11-12T12:00Z'))).toEqual([]);
+    expect(utcMidnightsIn(NaN, 1)).toEqual([]);
+  });
+});
+
+describe('utcMidnightIdxs: the first bar of each new UTC day, for an index-spaced chart', () => {
+  it('a week of half-hour bars: one index a day after the first, each the day\'s 00:00 bar', () => {
+    const bars = Array.from({ length: 3 * 48 }, (_, i) => ({ date: new Date(Date.parse('2026-11-10T00:00Z') + i * 1800e3).toISOString().slice(0, 16) }));
+    expect(utcMidnightIdxs(bars)).toEqual([48, 96]);
+    expect(utcMidnightIdxs(bars).map((i) => bars[i].date)).toEqual(['2026-11-11T00:00', '2026-11-12T00:00']);
+  });
+  it('a gap over midnight marks the first bar after it; one day alone marks none; the first bar never', () => {
+    expect(utcMidnightIdxs([{ date: '2026-11-12T22:00' }, { date: '2026-11-13T03:00' }, { date: '2026-11-13T04:00' }])).toEqual([1]);
+    expect(utcMidnightIdxs([{ date: '2026-11-13T00:00' }, { date: '2026-11-13T05:00' }])).toEqual([]);
+    expect(utcMidnightIdxs(null)).toEqual([]);
   });
 });

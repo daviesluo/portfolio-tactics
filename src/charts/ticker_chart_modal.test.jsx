@@ -442,3 +442,39 @@ describe('TickerChartModal — 6M replaces YTD and shows MA 50 with MA 20', () =
     expect(names).not.toContain('YTD');
   });
 });
+
+// A private-module holding's day boundary (Davies, 2026-11-13: "在0:00加一条竖虚线，类似于个股里的open和close线，让我知道day收益的分界线"):
+// a dashed line at each 00:00 UTC, where a private slot's and a private slot's TODAY starts, drawn by the component OPEN and CLOSE use.
+describe('TickerChartModal — a private-module holding\'s 00:00 UTC lines', () => {
+  /** Three UTC days of half-hour bars ending today, the way the chart function serves a strategy's 1W. */
+  const threeDays = () => {
+    const day0 = Math.floor(Date.now() / 864e5) * 864e5 - 2 * 864e5;
+    return Array.from({ length: 3 * 48 }, (_, i) => ({ date: new Date(day0 + i * 1800e3).toISOString().slice(0, 16), close: 1 + i / 1000 }));
+  };
+  const at1W = async (/** @type {string} */ ticker, /** @type {any} */ holding) => {
+    seedChartCache(ticker, '1W', false, 'regular', threeDays());
+    const user = userEvent.setup();
+    const { container } = renderModal({ ticker, holding });
+    await user.click(screen.getByRole('button', { name: '1W' }));
+    return container;
+  };
+  it('a private slot at 1W: one line on each day\'s first bar, the OPEN/CLOSE style, labelled 00:00 UTC', async () => {
+    const c = await at1W('a private slot', { strategy: true, shares: 100, cost: 1, lastPrice: 1.2, prevClose: 1.18, dayPct: 1.69, currency: 'GBP', lots: [], sells: [] });
+    const days = [...c.querySelectorAll('svg .day-line')];
+    expect(days.length).toBe(2);
+    for (const g of days) {
+      const l = /** @type {Element} */ (g.querySelector('line'));
+      expect([l.getAttribute('stroke'), l.getAttribute('stroke-width'), l.getAttribute('stroke-dasharray'), l.getAttribute('opacity')])
+        .toEqual(['var(--chalk-dim)', '0.8', '3,4', '0.6']);
+      expect(g.querySelector('text')?.textContent).toBe('00:00 UTC');
+    }
+    // On bars 48 and 96 of 144, index-spaced: the second right of the first.
+    const xs = days.map((g) => Number(g.querySelector('line')?.getAttribute('x1')));
+    expect(xs[0]).toBeLessThan(xs[1]);
+  }, 20_000);
+  it('counterfactual: the same bars on a stock draw no 00:00 line (its day is its session)', async () => {
+    const c = await at1W('KO', { shares: 10, cost: 200, lastPrice: 215, prevClose: 213, dayPct: 0.94 });
+    expect(c.querySelector('svg path[d^="M"]')).not.toBe(null);
+    expect(c.querySelectorAll('svg .day-line').length).toBe(0);
+  }, 20_000);
+});
