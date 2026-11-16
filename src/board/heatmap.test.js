@@ -5,7 +5,7 @@
 // change which instrument the click resolves.
 
 import { describe, it, expect } from 'vitest';
-import { displayTicker, fitTicker, heatmapItems, treemap, STACK_MIN_RATIO, STACK_MAX_RATIO } from './heatmap.jsx';
+import { displayTicker, fitTicker, heatmapItems, treemap, SIX_MIN_RATIO, STACK_MIN_RATIO, STACK_MAX_RATIO } from './heatmap.jsx';
 
 describe('displayTicker', () => {
   it('strips the exchange suffix from foreign-listed tickers', () => {
@@ -189,6 +189,9 @@ function oldTreemap(nodes, x, y, w, h) {
 const rects = (tiles) => Object.fromEntries(tiles.map((t) => [t.ticker, [t.x, t.y, t.w, t.h]]));
 const changed = (a, b) => Object.keys(a).filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
 const RIGHT4 = ['PLTR', 'RKLB', 'MSTR', 'SYK'];
+// The map's six largest, which the 2026-11-16 rule (below) re-lays when they alone fill its top block: with 12 to 15
+// holdings of these books, never with all of them.
+const OCT20_TOP6 = 'MSFT NVDA SPCX AMZN PLTR RKLB';
 /** @param {number[]} values */
 const nodes = (values) => values.map((value, i) => ({ ticker: `T${i}`, value }));
 
@@ -225,11 +228,14 @@ describe('treemap — a 2×2 beside a 2×2 stacks its right half into one column
     expect(changed(now, old)).toEqual([...RIGHT4, 'GOOGL', 'NBIS']);
   });
 
-  it('changes nothing on the phone, which already stacks them', () => {
+  it('changes nothing on the phone, which already stacks them, but the top six of 2026-11-16 (below)', () => {
+    const differs = [];
     for (let n = 1; n <= OCT20.length; n++) {
       const set = OCT20.slice(0, n);
-      expect(treemap(set, 0, 0, PHONE[0], PHONE[1])).toEqual(oldTreemap(set, 0, 0, PHONE[0], PHONE[1]));
+      const d = changed(rects(treemap(set, 0, 0, PHONE[0], PHONE[1])), rects(oldTreemap(set, 0, 0, PHONE[0], PHONE[1])));
+      if (d.length) differs.push(`${n}: ${d.join(' ')}`);
     }
+    expect(differs).toEqual([14, 15].map((n) => `${n}: ${OCT20_TOP6}`));
     expect(rects(treemap(OCT20, 0, 0, PHONE[0], PHONE[1])).SYK).toEqual([186, 253, 150, 73]);
   });
 
@@ -244,9 +250,13 @@ describe('treemap — a 2×2 beside a 2×2 stacks its right half into one column
     }
     // [•] to [•] holdings: the top block as above. [•] holdings: the same shape one level down, KO/META over
     // BTC-USD/BE beside MSTR/SYK over GOOGL/NBIS, now KO, META, BTC-USD, BE in one column ([•] wide, [•] to [•] tall).
-    // 22 to 24 also stack GOOGL over NBIS, the 2026-10-21 rule below.
+    // 22 to 24 also stack GOOGL over NBIS, the 2026-10-21 rule below. 12 to 15: the top six of 2026-11-16, below.
     expect(differs).toEqual([
-      '14@530x810: KO META BTC-USD BE',
+      `12@530x810: ${OCT20_TOP6}`,
+      `13@530x810: ${OCT20_TOP6}`,
+      `14@530x810: ${OCT20_TOP6} KO META BTC-USD BE`,
+      `14@336x610: ${OCT20_TOP6}`,
+      `15@336x610: ${OCT20_TOP6}`,
       ...[20, 21].map((n) => `${n}@530x810: ${RIGHT4.join(' ')}`),
       ...[22, 23, 24].map((n) => `${n}@530x810: ${RIGHT4.join(' ')} GOOGL NBIS`),
     ]);
@@ -391,13 +401,21 @@ describe('treemap — the bottom-left six stack their first two beside the third
     expect(treemap(PREFERRED, 0, 0, DESKTOP[0], DESKTOP[1])).toEqual(oct20Treemap(PREFERRED, 0, 0, DESKTOP[0], DESKTOP[1]));
   });
 
-  it('changes nothing on the phone, whose six already stack', () => {
-    for (const b of [OCT20, PLAIN, PREFERRED]) {
+  it('changes nothing on the phone, whose six already stack, but the top six of 2026-11-16 (below)', () => {
+    const differs = [];
+    for (const [name, b] of /** @type {[string, any[]][]} */ ([['OCT20', OCT20], ['PLAIN', PLAIN], ['PREFERRED', PREFERRED]])) {
       for (let n = 1; n <= b.length; n++) {
         const set = b.slice(0, n);
-        expect(treemap(set, 0, 0, PHONE[0], PHONE[1])).toEqual(oct20Treemap(set, 0, 0, PHONE[0], PHONE[1]));
+        const d = changed(rects(treemap(set, 0, 0, PHONE[0], PHONE[1])), rects(oct20Treemap(set, 0, 0, PHONE[0], PHONE[1])));
+        if (d.length) differs.push(`${name} ${n}: ${d.join(' ')}`);
       }
     }
+    const top6 = (b) => b.slice(0, 6).map((t) => t.ticker).join(' ');
+    expect(differs).toEqual([
+      ...[14, 15].map((n) => `OCT20 ${n}: ${top6(OCT20)}`),
+      ...[14, 15].map((n) => `PLAIN ${n}: ${top6(PLAIN)}`),
+      ...[14, 15].map((n) => `PREFERRED ${n}: ${top6(PREFERRED)}`),
+    ]);
   });
 
   it('changes only that six across three books\' every prefix at five canvas sizes', () => {
@@ -413,9 +431,17 @@ describe('treemap — the bottom-left six stack their first two beside the third
     }
     // OCT20's own bottom-left six (GOOGL NBIS KO over META BTC-USD BE) were the same plain 2 × 3, and stack too.
     // PREFERRED's 24 already stack, as on his screen; with 21 to 23 of them the six come out plain and stack.
+    // And with 12 to 15 holdings, each book's top six alone: the 2026-11-16 rule below.
+    const top6 = (name, b, n, size) => `${name} ${n}@${size}: ${b.slice(0, 6).map((t) => t.ticker).join(' ')}`;
+    const sixAt = (name, b, desk) => [
+      ...desk.map((n) => top6(name, b, n, '530x810')), top6(name, b, 14, '336x610'), top6(name, b, 15, '336x610'),
+    ].sort((a, c) => parseInt(a.split(' ')[1]) - parseInt(c.split(' ')[1]));
     expect(differs).toEqual([
+      ...sixAt('OCT20', OCT20, [12, 13, 14]),
       ...[22, 23, 24].map((n) => `OCT20 ${n}@530x810: GOOGL NBIS`),
+      ...sixAt('PLAIN', PLAIN, [13, 14]),
       ...[21, 22, 23, 24].map((n) => `PLAIN ${n}@530x810: SYK NBIS`),
+      ...sixAt('PREFERRED', PREFERRED, [13, 14]),
       ...[21, 22, 23].map((n) => `PREFERRED ${n}@530x810: SYK NBIS`),
     ]);
   });
@@ -445,5 +471,65 @@ describe('treemap — the bottom-left six stack their first two beside the third
   it('keeps the six as the split lays them when no side-by-side cut puts them on the left', () => {
     const six = PLAIN.filter((n) => SIX.includes(n.ticker));
     expect(treemap(six, 0, 0, 293, 366)).toEqual(oct20Treemap(six, 0, 0, 293, 366));
+  });
+});
+
+// ── The map's top six: a 2 × 2 beside a column of two, not a plain 2 × 3 (Davies, 2026-11-16) ──────────────────────
+//
+// "上面6个都是2*3太单调了": on his phone the six largest filled the map's top block as two columns of three. He prefers
+// the shape of another day, a 2 × 2 beside a column. Weights are the tile areas measured off that phone screenshot (px²
+// of the image, rounded), shares of the book and not amounts; T16 and T19 stand for two rows that are not tickers or
+// were cut off. Through the split as it stood they reproduce the screenshot: SPCX AMZN NVDA in the left column, RKLB
+// GOOGL MSTR in the right, then PLTR/TSM over META, NBIS/MU, BE over APLD beside HOOD, and the small ones.
+const NOV16 = weights([
+  ['SPCX', 112], ['AMZN', 90], ['NVDA', 89], ['RKLB', 83], ['GOOGL', 80], ['MSTR', 70], ['PLTR', 63], ['TSM', 58],
+  ['META', 54], ['NBIS', 50], ['MU', 46], ['BE', 45], ['APLD', 42], ['HOOD', 38], ['BTC-USD', 32], ['T16', 27],
+  ['BMNR', 25], ['NVTS', 24], ['T19', 5],
+]);
+const NOV16_TOP6 = ['SPCX', 'AMZN', 'NVDA', 'RKLB', 'GOOGL', 'MSTR'];
+
+describe('treemap — the top six as a 2 × 2 beside a column of two (2026-11-16)', () => {
+  it('reproduces his two columns of three under the split as it stood', () => {
+    const was = rects(oct20Treemap(NOV16, 0, 0, PHONE[0], PHONE[1]));
+    expect(NOV16_TOP6.map((t) => was[t])).toEqual([
+      [0, 0, 187, 119], [0, 119, 187, 95], [0, 214, 187, 95],
+      [187, 0, 149, 110], [187, 110, 149, 106], [187, 216, 149, 93],
+    ]);
+  });
+
+  it('draws SPCX AMZN over NVDA RKLB beside GOOGL over MSTR, no tile past 0.55 or 1 / 0.55', () => {
+    const now = rects(treemap(NOV16, 0, 0, PHONE[0], PHONE[1]));
+    expect(NOV16_TOP6.map((t) => now[t])).toEqual([
+      [0, 0, 133, 167], [133, 0, 107, 167], [0, 167, 124, 142],
+      [124, 167, 116, 142], [240, 0, 96, 165], [240, 165, 96, 144],
+    ]);
+    // The block is the one the grid filled: x 0..336, y 0..309.
+    for (const t of NOV16_TOP6) {
+      const [, , w, h] = now[t];
+      expect(w / h).toBeGreaterThanOrEqual(SIX_MIN_RATIO);
+      expect(w / h).toBeLessThanOrEqual(1 / SIX_MIN_RATIO);
+    }
+  });
+
+  it('moves nothing else on that map, and nothing of it on the desktop', () => {
+    const at = (fn, w, h) => rects(fn(NOV16, 0, 0, w, h));
+    expect(changed(at(treemap, PHONE[0], PHONE[1]), at(oct20Treemap, PHONE[0], PHONE[1]))).toEqual(NOV16_TOP6);
+    expect(changed(at(treemap, DESKTOP[0], DESKTOP[1]), at(oct20Treemap, DESKTOP[0], DESKTOP[1]))).toEqual([]);
+  });
+
+  it('keeps the grid when a tile would pass the bound, and re-lays the same six once it would not', () => {
+    // 50 30 25 25 25 25 in 120 × 110: two columns of three. Re-laid, the 30 would be 33 × 68 (0.48): the grid stays.
+    // At 140 × 110 it is 38 × 68 (0.56) and the six are re-laid.
+    const six = nodes([50, 30, 25, 25, 25, 25]);
+    expect(treemap(six, 0, 0, 120, 110)).toEqual(oct20Treemap(six, 0, 0, 120, 110));
+    const wide = rects(treemap(six, 0, 0, 140, 110));
+    expect(changed(wide, rects(oct20Treemap(six, 0, 0, 140, 110)))).toEqual(['T0', 'T1', 'T2', 'T3', 'T4', 'T5']);
+    expect([wide.T4, wide.T5]).toEqual([[101, 0, 39, 55], [101, 55, 39, 55]]);
+  });
+
+  it('touches only the map\'s top-left block: the same six anywhere else keep their grid', () => {
+    const six = nodes([50, 30, 25, 25, 25, 25]);
+    expect(treemap(six, 10, 0, 140, 110)).toEqual(oct20Treemap(six, 10, 0, 140, 110));
+    expect(treemap(six, 0, 40, 140, 110)).toEqual(oct20Treemap(six, 0, 40, 140, 110));
   });
 });

@@ -172,6 +172,70 @@ function topPairStacked(nodes, x, y, w, h) {
 }
 
 /**
+ * Whether the split stacks these nodes in one column filling the rect, as it does three tiles in a strip taller than
+ * wide.
+ * @param {{ value: number }[]} nodes
+ * @param {number} w
+ * @param {number} h
+ */
+function isColumn(nodes, w, h) {
+  return treemap(nodes, 0, 0, w, h).every((t) => t.x === 0 && t.w === w);
+}
+
+// The bound on every tile of `fourBesideTwo`: width ÷ height between 0.55 and 1 / 0.55. The case it was set from reads
+// 0.60 to 0.90 on the phone; a narrower tile is the skinny strip the map must never draw, and then the grid stays.
+export const SIX_MIN_RATIO = 0.55;
+
+/**
+ * Whether a group of six reads better as a 2 × 2 of its first four beside its last two stacked than as the plain grid
+ * the split gives it (Davies, 2026-11-16: the phone's top six came out two columns of three, "上面6个都是2*3太单调了",
+ * and he prefers the shape the map had on another day, a 2 × 2 beside a column). Only that case: six tiles in a rect
+ * wider than tall at the map's top-left corner (the largest holdings: "其他地方的逻辑可以不变"), cut three beside three, each
+ * three a column; the first four's block laid out as a 2 × 2; and every tile of the new layout within `SIX_MIN_RATIO`.
+ * Anything else keeps the split's own layout, the bottom-left six of 2026-10-21 included.
+ * @param {{ value: number }[]} nodes
+ * @param {number} w
+ * @param {number} h
+ */
+function sixAsFourBesideTwo(nodes, w, h) {
+  if (nodes.length !== 6 || w < h) return false;
+  const { g1, g2, frac } = halve(nodes);
+  if (g1.length !== 3) return false;
+  const w1 = Math.max(1, Math.round(w * frac));
+  if (!isColumn(g1, w1, h) || !isColumn(g2, w - w1, h)) return false;
+  const four = nodes.slice(0, 4);
+  const fw = fourWidth(nodes, w);
+  if (!isTwoByTwo(four, fw, h)) return false;
+  return fourBesideTwo(nodes, 0, 0, w, h).every((t) => {
+    const ratio = t.w / t.h;
+    return ratio >= SIX_MIN_RATIO && ratio <= 1 / SIX_MIN_RATIO;
+  });
+}
+
+/** The width the first four of six take, in proportion to their value. @param {{ value: number }[]} nodes @param {number} w */
+function fourWidth(nodes, w) {
+  const total = nodes.reduce((s, n) => s + n.value, 0);
+  const four = nodes.slice(0, 4).reduce((s, n) => s + n.value, 0);
+  return Math.max(1, Math.round((w * four) / total));
+}
+
+/**
+ * The six `sixAsFourBesideTwo` accepts: the first four on the left, as the split lays them out (a 2 × 2), the last two
+ * stacked on the right.
+ * @template {{ value: number }} T
+ * @param {T[]} nodes
+ * @param {number} x
+ * @param {number} y
+ * @param {number} w
+ * @param {number} h
+ * @returns {(T & { x: number, y: number, w: number, h: number })[]}
+ */
+function fourBesideTwo(nodes, x, y, w, h) {
+  const fw = fourWidth(nodes, w);
+  return [...treemap(nodes.slice(0, 4), x, y, fw, h), ...treemap(nodes.slice(4), x + fw, y, w - fw, h, true)];
+}
+
+/**
  * The tiles' rects: split the nodes in two by value, cut the rect across its longer side in that proportion, and
  * recurse. `column` cuts every level across, which stacks the nodes top to bottom.
  * @template {{ value: number }} T
@@ -186,6 +250,8 @@ function topPairStacked(nodes, x, y, w, h) {
 export function treemap(nodes, x, y, w, h, column = false) {
   if (!nodes.length) return [];
   if (nodes.length === 1) return [{ ...nodes[0], x, y, w, h }];
+  // The map's top-left block alone (the largest holdings): every other six keeps the split's layout.
+  if (!column && x === 0 && y === 0 && sixAsFourBesideTwo(nodes, w, h)) return fourBesideTwo(nodes, x, y, w, h);
 
   const { g1, g2, frac } = halve(nodes);
 
