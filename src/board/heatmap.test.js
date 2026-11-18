@@ -497,17 +497,19 @@ describe('treemap — the top six as a 2 × 2 beside a column of two (2026-11-16
     ]);
   });
 
-  it('draws SPCX AMZN over NVDA RKLB beside GOOGL over MSTR, no tile past 0.55 or 1 / 0.55', () => {
+  it('drew SPCX AMZN over NVDA RKLB beside GOOGL over MSTR until 2026-11-18, now the nested shape of that day (below)', () => {
+    // The 2026-11-16 layout, which he then found as plain as the grid it replaced; superseded by `sixAsTwoBesideFour`.
+    // Now: SPCX over AMZN on the left, NVDA over RKLB as wide tiles on the right, GOOGL beside MSTR beneath them.
     const now = rects(treemap(NOV16, 0, 0, PHONE[0], PHONE[1]));
     expect(NOV16_TOP6.map((t) => now[t])).toEqual([
-      [0, 0, 133, 167], [133, 0, 107, 167], [0, 167, 124, 142],
-      [124, 167, 116, 142], [240, 0, 96, 165], [240, 165, 96, 144],
+      [0, 0, 130, 171], [0, 171, 130, 138], [130, 0, 206, 85],
+      [130, 85, 206, 80], [130, 165, 110, 144], [240, 165, 96, 144],
     ]);
-    // The block is the one the grid filled: x 0..336, y 0..309.
+    // The block is the one the grid filled: x 0..336, y 0..309. No skinny strip, nothing flatter than 3 : 1.
     for (const t of NOV16_TOP6) {
       const [, , w, h] = now[t];
       expect(w / h).toBeGreaterThanOrEqual(SIX_MIN_RATIO);
-      expect(w / h).toBeLessThanOrEqual(1 / SIX_MIN_RATIO);
+      expect(w / h).toBeLessThanOrEqual(STACK_MAX_RATIO);
     }
   });
 
@@ -517,19 +519,106 @@ describe('treemap — the top six as a 2 × 2 beside a column of two (2026-11-16
     expect(changed(at(treemap, DESKTOP[0], DESKTOP[1]), at(oct20Treemap, DESKTOP[0], DESKTOP[1]))).toEqual([]);
   });
 
-  it('keeps the grid when a tile would pass the bound, and re-lays the same six once it would not', () => {
-    // 50 30 25 25 25 25 in 120 × 110: two columns of three. Re-laid, the 30 would be 33 × 68 (0.48): the grid stays.
-    // At 140 × 110 it is 38 × 68 (0.56) and the six are re-laid.
+  it('keeps the grid when both shapes would pass a bound, and falls back to the 2 × 2 beside a column when only the nested one would', () => {
+    // 50 30 25 25 25 25 in 110 × 110: two columns of three. Nested, the last two would be 30 × 55 (0.55 less a rounding);
+    // as a 2 × 2 beside a column, the 30 33 × 68 or so (0.48): the grid stays. At 120 × 110 the nested shape fits.
     const six = nodes([50, 30, 25, 25, 25, 25]);
-    expect(treemap(six, 0, 0, 120, 110)).toEqual(oct20Treemap(six, 0, 0, 120, 110));
-    const wide = rects(treemap(six, 0, 0, 140, 110));
-    expect(changed(wide, rects(oct20Treemap(six, 0, 0, 140, 110)))).toEqual(['T0', 'T1', 'T2', 'T3', 'T4', 'T5']);
-    expect([wide.T4, wide.T5]).toEqual([[101, 0, 39, 55], [101, 55, 39, 55]]);
+    expect(treemap(six, 0, 0, 110, 110)).toEqual(oct20Treemap(six, 0, 0, 110, 110));
+    const nested = rects(treemap(six, 0, 0, 120, 110));
+    expect(Object.values(nested)).toEqual([[0, 0, 53, 69], [0, 69, 53, 41], [53, 0, 67, 28], [53, 28, 67, 27], [53, 55, 34, 55], [87, 55, 33, 55]]);
+    // 30 30 25 25 25 25 in 140 × 110: nested, the third and fourth would be 87 × 28 (3.1), flatter than 3 : 1, so the
+    // 2026-11-16 shape is drawn instead: the first four a 2 × 2, the last two stacked beside them.
+    const even = nodes([30, 30, 25, 25, 25, 25]);
+    expect(Object.values(rects(treemap(even, 0, 0, 140, 110)))).toEqual([[0, 0, 48, 60], [48, 0, 48, 60], [0, 60, 48, 50], [48, 60, 48, 50], [96, 0, 44, 55], [96, 55, 44, 55]]);
   });
 
   it('touches only the map\'s top-left block: the same six anywhere else keep their grid', () => {
     const six = nodes([50, 30, 25, 25, 25, 25]);
     expect(treemap(six, 10, 0, 140, 110)).toEqual(oct20Treemap(six, 10, 0, 140, 110));
     expect(treemap(six, 0, 40, 140, 110)).toEqual(oct20Treemap(six, 0, 40, 140, 110));
+  });
+});
+
+// ── The map's top six, nested: two stacked beside two wide over a pair (Davies, 2026-11-18) ──────────────────────────
+//
+// "相比图一上半部分我更喜欢图二那种排列，不然上面光是2*3太无聊了": on his phone the 2026-11-16 rule above drew the six largest as SPCX
+// AMZN over NVDA GOOGL beside RKLB over MSTR, which reads as a plain 2 × 3; he prefers the nested shape of another day,
+// a column of wide tiles beside two stacked over a pair. NOV18 is a made-up book in that screenshot's order and rough
+// proportions (not its amounts or areas): nineteen holdings, the top six of similar size, SPCX the largest.
+const NOV18 = weights([
+  ['SPCX', 120], ['AMZN', 98], ['NVDA', 93], ['GOOGL', 86], ['RKLB', 84], ['MSTR', 75], ['PLTR', 66], ['TSM', 61],
+  ['META', 58], ['NBIS', 54], ['MU', 50], ['BE', 47], ['APLD', 45], ['HOOD', 40], ['a private slot', 38], ['BTC-USD', 36],
+  ['BMNR', 28], ['NVTS', 25], ['a private slot', 6],
+]);
+const NOV18_TOP6 = ['SPCX', 'AMZN', 'NVDA', 'GOOGL', 'RKLB', 'MSTR'];
+// The rule of 2026-11-16 alone (the top six as a 2 × 2 beside a column, else the split): what he saw that day.
+function nov16Treemap(ns, x, y, w, h) {
+  const total = ns.reduce((s, n) => s + n.value, 0);
+  const fw = Math.max(1, Math.round((w * ns.slice(0, 4).reduce((s, n) => s + n.value, 0)) / total));
+  return [...oct20Treemap(ns.slice(0, 4), x, y, fw, h), ...oct20Treemap(ns.slice(4), x + fw, y, w - fw, h, true)];
+}
+
+describe('treemap — the top six nested, not a 2 × 2 beside a column (2026-11-18)', () => {
+  it('reproduces his 2 × 2 beside a column under the rule of 2026-11-16', () => {
+    // The split cuts the top block 336 × 306 off the phone's canvas, and the six as two columns of three in it.
+    const all = rects(treemap(NOV18, 0, 0, PHONE[0], PHONE[1]));
+    const block = Object.values(all).filter(([x, y]) => y < 306 && x < 336).length;
+    expect(block).toBe(6);
+    const was = rects(nov16Treemap(NOV18.slice(0, 6), 0, 0, 336, 306));
+    expect(NOV18_TOP6.map((t) => was[t])).toEqual([
+      [0, 0, 132, 168], [132, 0, 108, 168], [0, 168, 125, 138],
+      [125, 168, 115, 138], [240, 0, 96, 162], [240, 162, 96, 144],
+    ]);
+    // Its rows line up across the block (SPCX AMZN RKLB over NVDA GOOGL MSTR, as on his screen): the plain 2 × 3.
+    expect(Math.abs(was.SPCX[3] - was.RKLB[3])).toBeLessThan(10);
+  });
+
+  it('draws SPCX over AMZN beside NVDA over GOOGL as wide tiles over RKLB | MSTR', () => {
+    const now = rects(treemap(NOV18, 0, 0, PHONE[0], PHONE[1]));
+    expect(NOV18_TOP6.map((t) => now[t])).toEqual([
+      [0, 0, 132, 168], [0, 168, 132, 138], [132, 0, 204, 84],
+      [132, 84, 204, 78], [132, 162, 108, 144], [240, 162, 96, 144],
+    ]);
+    for (const t of NOV18_TOP6) {
+      const [, , w, h] = now[t];
+      expect(w / h).toBeGreaterThanOrEqual(SIX_MIN_RATIO);
+      expect(w / h).toBeLessThanOrEqual(STACK_MAX_RATIO);
+    }
+  });
+
+  it('moves nothing else on that map, and nothing of it on the desktop', () => {
+    const at = (fn, w, h) => rects(fn(NOV18, 0, 0, w, h));
+    expect(changed(at(treemap, PHONE[0], PHONE[1]), at(oct20Treemap, PHONE[0], PHONE[1]))).toEqual(NOV18_TOP6);
+    expect(changed(at(treemap, DESKTOP[0], DESKTOP[1]), at(oct20Treemap, DESKTOP[0], DESKTOP[1]))).toEqual([]);
+    // The desktop's six, as the sweep reads them (less its gap): the split's own.
+    expect(NOV18_TOP6.map((t) => at(treemap, DESKTOP[0], DESKTOP[1])[t])).toEqual([
+      [0, 0, 163, 285], [163, 0, 133, 285], [0, 285, 296, 121], [296, 0, 234, 143], [296, 143, 234, 139], [296, 282, 234, 124],
+    ]);
+  });
+});
+
+// The other day's shape, the one he prefers, stays as it was: a made-up book in that screenshot's order and rough
+// proportions, where the top block holds seven (SPCX AMZN NVDA in a column of wide tiles beside RKLB over GOOGL over
+// MSTR | PLTR), so neither six-tile rule touches it.
+const NOV18_LIKED = weights([
+  ['SPCX', 116], ['AMZN', 97], ['NVDA', 95], ['RKLB', 85], ['GOOGL', 83], ['MSTR', 74], ['PLTR', 66], ['TSM', 62],
+  ['META', 61], ['NBIS', 60], ['MU', 55], ['BE', 52], ['APLD', 51], ['HOOD', 43], ['a private slot', 37], ['BTC-USD', 35],
+  ['BMNR', 26], ['NVTS', 25], ['a private slot', 6],
+]);
+
+describe('treemap — the nested top block he liked on 2026-11-18 lays out as before', () => {
+  it('keeps SPCX AMZN NVDA beside RKLB over GOOGL over MSTR | PLTR, the split\'s own on the phone', () => {
+    const now = rects(treemap(NOV18_LIKED, 0, 0, PHONE[0], PHONE[1]));
+    expect(changed(now, rects(oct20Treemap(NOV18_LIKED, 0, 0, PHONE[0], PHONE[1])))).toEqual([]);
+    const [sp, am, nv, rk, go, ms, pl] = ['SPCX', 'AMZN', 'NVDA', 'RKLB', 'GOOGL', 'MSTR', 'PLTR'].map((t) => now[t]);
+    // SPCX, AMZN, NVDA one column at the left edge; RKLB over GOOGL, one width, to its right; MSTR beside PLTR below them.
+    expect([sp[0], am[0], nv[0]]).toEqual([0, 0, 0]);
+    expect(am[2]).toBe(sp[2]);
+    expect(nv[2]).toBe(sp[2]);
+    expect(rk[0]).toBe(sp[2]);
+    expect([go[0], go[2]]).toEqual([rk[0], rk[2]]);
+    expect(ms[1]).toBe(pl[1]);
+    expect(ms[1]).toBe(go[1] + go[3]);
+    expect(pl[0]).toBe(ms[0] + ms[2]);
   });
 });

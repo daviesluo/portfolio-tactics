@@ -192,17 +192,14 @@ export const SIX_MIN_RATIO = 0.55;
  * and he prefers the shape the map had on another day, a 2 × 2 beside a column). Only that case: six tiles in a rect
  * wider than tall at the map's top-left corner (the largest holdings: "其他地方的逻辑可以不变"), cut three beside three, each
  * three a column; the first four's block laid out as a 2 × 2; and every tile of the new layout within `SIX_MIN_RATIO`.
- * Anything else keeps the split's own layout, the bottom-left six of 2026-10-21 included.
+ * Anything else keeps the split's own layout, the bottom-left six of 2026-10-21 included. Since 2026-11-18 this is the
+ * fallback: the nested shape of `sixAsTwoBesideFour` comes first, as he found this one a plain 2 × 3 as well.
  * @param {{ value: number }[]} nodes
  * @param {number} w
  * @param {number} h
  */
 function sixAsFourBesideTwo(nodes, w, h) {
-  if (nodes.length !== 6 || w < h) return false;
-  const { g1, g2, frac } = halve(nodes);
-  if (g1.length !== 3) return false;
-  const w1 = Math.max(1, Math.round(w * frac));
-  if (!isColumn(g1, w1, h) || !isColumn(g2, w - w1, h)) return false;
+  if (!sixInTwoColumns(nodes, w, h)) return false;
   const four = nodes.slice(0, 4);
   const fw = fourWidth(nodes, w);
   if (!isTwoByTwo(four, fw, h)) return false;
@@ -210,6 +207,65 @@ function sixAsFourBesideTwo(nodes, w, h) {
     const ratio = t.w / t.h;
     return ratio >= SIX_MIN_RATIO && ratio <= 1 / SIX_MIN_RATIO;
   });
+}
+
+/**
+ * Whether the split lays these nodes out as the map's top six in two columns of three: six tiles in a rect wider than
+ * tall, cut three beside three, each three a column.
+ * @param {{ value: number }[]} nodes
+ * @param {number} w
+ * @param {number} h
+ */
+function sixInTwoColumns(nodes, w, h) {
+  if (nodes.length !== 6 || w < h) return false;
+  const { g1, g2, frac } = halve(nodes);
+  if (g1.length !== 3) return false;
+  const w1 = Math.max(1, Math.round(w * frac));
+  return isColumn(g1, w1, h) && isColumn(g2, w - w1, h);
+}
+
+/**
+ * Whether the map's top six read better as their first two stacked beside the other four, those four as two wide tiles
+ * stacked over two side by side, than as either grid (Davies, 2026-11-18: the 2 × 2 beside a column of 2026-11-16 drew
+ * SPCX AMZN RKLB over NVDA GOOGL MSTR on his phone, "上面光是2*3太无聊了", and he prefers another day's nested shape, a
+ * column of wide tiles beside two stacked over a pair). Only where `sixInTwoColumns` holds (the map's top-left block,
+ * the same six the 2026-11-16 rule takes), the last two side by side, and every tile no narrower than `SIX_MIN_RATIO`
+ * (no skinny strip) and no flatter than `STACK_MAX_RATIO`. Anything else falls back to the 2026-11-16 rule, then the split.
+ * @param {{ value: number }[]} nodes
+ * @param {number} w
+ * @param {number} h
+ */
+function sixAsTwoBesideFour(nodes, w, h) {
+  if (!sixInTwoColumns(nodes, w, h)) return false;
+  const tiles = twoBesideFour(nodes, 0, 0, w, h);
+  if (tiles[4].y !== tiles[5].y) return false;
+  return tiles.every((t) => {
+    const ratio = t.w / t.h;
+    return ratio >= SIX_MIN_RATIO && ratio <= STACK_MAX_RATIO;
+  });
+}
+
+/**
+ * The six `sixAsTwoBesideFour` accepts: the first two stacked on the left, in proportion to their value; on the right
+ * the next two stacked over the last two, those two as the split lays them out (side by side in a rect wider than tall).
+ * @template {{ value: number }} T
+ * @param {T[]} nodes
+ * @param {number} x
+ * @param {number} y
+ * @param {number} w
+ * @param {number} h
+ * @returns {(T & { x: number, y: number, w: number, h: number })[]}
+ */
+function twoBesideFour(nodes, x, y, w, h) {
+  const sum = (/** @type {T[]} */ list) => list.reduce((s, n) => s + n.value, 0);
+  const lw = Math.max(1, Math.round((w * sum(nodes.slice(0, 2))) / sum(nodes)));
+  const four = nodes.slice(2);
+  const h2 = Math.max(1, Math.round((h * sum(four.slice(0, 2))) / sum(four)));
+  return [
+    ...treemap(nodes.slice(0, 2), x, y, lw, h, true),
+    ...treemap(four.slice(0, 2), x + lw, y, w - lw, h2, true),
+    ...treemap(four.slice(2), x + lw, y + h2, w - lw, h - h2),
+  ];
 }
 
 /** The width the first four of six take, in proportion to their value. @param {{ value: number }[]} nodes @param {number} w */
@@ -250,7 +306,9 @@ function fourBesideTwo(nodes, x, y, w, h) {
 export function treemap(nodes, x, y, w, h, column = false) {
   if (!nodes.length) return [];
   if (nodes.length === 1) return [{ ...nodes[0], x, y, w, h }];
-  // The map's top-left block alone (the largest holdings): every other six keeps the split's layout.
+  // The map's top-left block alone (the largest holdings): every other six keeps the split's layout. The nested shape
+  // first (2026-11-18), the 2 × 2 beside a column where it would draw a strip or a band flatter than 3 : 1.
+  if (!column && x === 0 && y === 0 && sixAsTwoBesideFour(nodes, w, h)) return twoBesideFour(nodes, x, y, w, h);
   if (!column && x === 0 && y === 0 && sixAsFourBesideTwo(nodes, w, h)) return fourBesideTwo(nodes, x, y, w, h);
 
   const { g1, g2, frac } = halve(nodes);
