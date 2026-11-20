@@ -75,6 +75,13 @@ vi.mock('../portfolio/trading212.js', async () => ({
   applyTrading212NightPrice: (h) => h,
   stripClosedFromPositions: (p) => p,
 }));
+// The board's private-module holdings read (`prices?action=strategies`). Left to the stubbed fetch below it answered 503, but a
+// refresh still out when a test ended reached it after `afterEach` had put the network guard back, and the guard failed
+// whichever test was running then (2026-11-20, the Trading 212 walk's tests under the gates' load).
+vi.mock('../portfolio/board_strategies.js', async () => ({
+  ...(await vi.importActual('../portfolio/board_strategies.js')),
+  fetchBoardStrategies: vi.fn(() => Promise.resolve(null)),
+}));
 vi.mock('../portfolio/portfolio_remote.js', () => ({
   loadPortfolioRemote: vi.fn(() => Promise.resolve(null)),
   savePortfolioRemote: vi.fn(() => Promise.resolve({ ok: true })),
@@ -135,7 +142,8 @@ beforeEach(() => {
   // test was reading. Anything not mocked above gets a 503.
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"no network in tests"}', { status: 503 })));
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+// Unmount first: a board left mounted past the stub keeps its refresh timers running against the network guard.
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('App — smoke render', () => {
   it('mounts without throwing when no token is present', () => {
@@ -707,6 +715,18 @@ describe('App — an unsaved edit left by a tab that reloaded', () => {
 // The Trading 212 history walk (review F17): the one-minute job runs it every ten minutes (0100), so a hidden tab no
 // longer calls it every two minutes; it walks again once it is shown.
 describe('App — the Trading 212 history walk', () => {
+  // The two tests of the history read out of turn hold the fake clock still (no `shouldAdvanceTime`) and wait in real
+  // time for the load's first refresh, so the walk's own first step (8 s) cannot fire while a loaded machine is slow:
+  // with the clock running on real time it did, and "at once" and "not at all" then failed under the gates' load.
+  const realSetTimeout = globalThis.setTimeout;
+  /** @param {() => boolean} done */
+  async function untilReal(done, budgetMs = 15_000) {
+    const end = performance.now() + budgetMs;
+    while (!done()) {
+      if (performance.now() > end) throw new Error('timed out waiting for the first refresh');
+      await new Promise((r) => realSetTimeout(r, 10));
+    }
+  }
   function setAdminToken() {
     const payload = btoa(JSON.stringify({ role: 'admin', exp: Date.now() + 60 * 60 * 1000 }))
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -744,7 +764,8 @@ describe('App — the Trading 212 history walk', () => {
   // out in full comes off only once its sale is among the stored fills, and the page used to wait for the walk's next
   // step for them. A slice newly held for want of its fill now asks for the history at once, and once only.
   it('reads the history at once when a sold-out slice waits for its fill, and only once for the same slice', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
+    const t0 = Date.now();
     visibility = 'visible';
     setAdminToken();
     vi.mocked(syncTrading212History).mockClear();
@@ -752,17 +773,24 @@ describe('App — the Trading 212 history walk', () => {
     vi.mocked(loadPortfolioRemote).mockResolvedValueOnce(/** @type {any} */ (structuredClone(SERVER_PORTFOLIO)));
     try {
       render(<App />);
-      await vi.advanceTimersByTimeAsync(5_000);               // before the walk's own first step at 8 s
+      await untilReal(() => vi.mocked(applyTrading212Answer).mock.calls.length > 0);
+      await vi.advanceTimersByTimeAsync(0);                   // the clock still at the load: the walk's own step is 8 s off
+      expect(Date.now() - t0).toBeLessThan(8_000);
       expect(syncTrading212History).toHaveBeenCalledTimes(1);
-      await vi.advanceTimersByTimeAsync(90_000);              // later refreshes hold the same slice: no second read
+      for (let i = 0; i < 3; i++) {                          // three 30 s ticks hold the same slice: no second read
+        const before = vi.mocked(applyTrading212Answer).mock.calls.length;
+        await vi.advanceTimersByTimeAsync(30_000);
+        await untilReal(() => vi.mocked(applyTrading212Answer).mock.calls.length > before);
+        await vi.advanceTimersByTimeAsync(0);
+      }
       expect(syncTrading212History).toHaveBeenCalledTimes(1);
     } finally {
       vi.mocked(applyTrading212Answer).mockImplementation(() => ({ zeroed: [], held: [] }));
     }
-  }, 20000);
+  }, 60000);
 
   it('does not read the history for a slice held because the answer missed an account', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.useFakeTimers();
     visibility = 'visible';
     setAdminToken();
     vi.mocked(syncTrading212History).mockClear();
@@ -770,12 +798,16 @@ describe('App — the Trading 212 history walk', () => {
     vi.mocked(loadPortfolioRemote).mockResolvedValueOnce(/** @type {any} */ (structuredClone(SERVER_PORTFOLIO)));
     try {
       render(<App />);
-      await vi.advanceTimersByTimeAsync(5_000);
+      await untilReal(() => vi.mocked(applyTrading212Answer).mock.calls.length > 0);
+      await vi.advanceTimersByTimeAsync(0);
       expect(syncTrading212History).not.toHaveBeenCalled();
+      // The walk's own step still comes at 8 s: the one call this slice gets.
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(syncTrading212History).toHaveBeenCalledTimes(1);
     } finally {
       vi.mocked(applyTrading212Answer).mockImplementation(() => ({ zeroed: [], held: [] }));
     }
-  }, 20000);
+  }, 60000);
 });
 
 // Outside the regular session each refresh asked for every US holding's 1d/5m bars again, every 30 s, sold-out
