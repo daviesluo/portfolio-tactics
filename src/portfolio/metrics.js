@@ -84,8 +84,15 @@ export const computeMetrics = (portfolio, opts = {}) => {
   // marketValue / dayChange are computed (this same positions loop).
   const countedTickers = new Set();
   const positionsOut = {};
+  // The day percents' bases, beside `prevMV`: the same for every holding but the board's strategies (a private slot, B and C), whose
+  // percent is on the money they had when the UTC day began, today's deposits left out (the server's `strategyHolding` dayPct,
+  // _shared/board_strategies.ts `todayBaseOf`, the Agents page's own base). Their day change stays TODAY, so their base is that
+  // change over that percent; without a percent (a day with no change) it is the day's start value as before. Until 2026-11-20
+  // the slot's and the board's percents were on `prevMV`, which counts a deposit made today: Quotes C's tile read +1.40 % beside
+  // the Agents card's +1.90 %.
+  let pctBaseAll = 0;
   for (const [posKey, pos] of Object.entries(portfolio.positions)) {
-    let posMV = 0, posPrev = 0, posCost = 0, posInvested = 0;
+    let posMV = 0, posPrev = 0, posCost = 0, posInvested = 0, posPctBase = 0;
     const players = [];
     for (const t of pos.tickers) {
       const h = portfolio.holdings[t];
@@ -203,6 +210,11 @@ export const computeMetrics = (portfolio, opts = {}) => {
           : (h.prevClose ?? priceNative);
       const prevMV = isCash ? mv : h.shares * baselinePrice * fx;
       const costUSD = isCash ? mv : h.shares * h.cost * fx;
+      const dayDeltaUSD = mv - prevMV;
+      const pctBase = h.strategy && !extActive && !sessionSuppress && Number.isFinite(pct) && pct !== 0 && dayDeltaUSD !== 0
+        ? dayDeltaUSD / (pct / 100)
+        : prevMV;
+      posPctBase += pctBase;
       posMV += mv; posPrev += prevMV; posCost += costUSD;
       if (!isCash) posInvested += costUSD;
       if (fxMissing) fxMissingTickers.push(t);
@@ -224,11 +236,12 @@ export const computeMetrics = (portfolio, opts = {}) => {
     marketValue += posMV; totalCost += posCost; investedCost += posInvested;
     const dayDelta = posMV - posPrev;
     dayChange += dayDelta;
+    pctBaseAll += posPctBase;
     positionsOut[posKey] = {
       ...pos,
       marketValue: posMV,
       dayChange: dayDelta,
-      dayPct: posPrev > 0 ? (dayDelta / posPrev) * 100 : 0,
+      dayPct: posPctBase > 0 ? (dayDelta / posPctBase) * 100 : 0,
       unrlGL: posMV - posCost,
       unrlPct: posInvested > 0 ? ((posMV - posCost) / posInvested) * 100 : 0,
       players,
@@ -238,7 +251,7 @@ export const computeMetrics = (portfolio, opts = {}) => {
     marketValue,
     totalCost,
     dayChange,
-    dayPct: (marketValue - dayChange) > 0 ? (dayChange / (marketValue - dayChange)) * 100 : 0,
+    dayPct: pctBaseAll > 0 ? (dayChange / pctBaseAll) * 100 : 0,
     investedCost,
     unrlGL: marketValue - totalCost,
     unrlPct: investedCost > 0 ? ((marketValue - totalCost) / investedCost) * 100 : 0,
