@@ -1138,19 +1138,55 @@ async function writeOrdersBatch(rows: unknown[]): Promise<boolean> {
   }
 }
 
-async function readOrdersSync(account: string): Promise<Record<string, unknown> | null> {
+/**
+ * A history walk's state row as read: the row, `null` when the walk has never run, or a read that failed.
+ *
+ * The two used to be one `null`, and a walk handed a failed read took it for a first run: page one, `complete` false,
+ * `fetched` from zero. On a finished walk that is the costly one. Its top-up of page one stops, and the walk goes back
+ * through the whole history a page a call, every new fill waiting until it reaches the end. On 2026-11-20 the Invest
+ * account's state read failed at 16:14 UTC and its walk started again; at 18:04 Davies sold a holding out of both
+ * accounts, the ISA fill was stored at 18:10 and the Invest one was not, so the stored fills did not net to zero and
+ * the sold-out slice stayed on the board (`settleSoldOutSlices`), while his buys showed at once from the positions read.
+ * `fetchImpl` is the test's seam.
+ */
+export type WalkStateRead = { ok: true; row: Record<string, unknown> | null } | { ok: false; error: string };
+
+export async function readWalkState(url: string, headers: Record<string, string>, fetchImpl: typeof fetch = fetch): Promise<WalkStateRead> {
   try {
-    const res = await fetch(
-      `${SB_URL}/rest/v1/t212_orders_sync?account=eq.${encodeURIComponent(account)}&select=*`,
-      { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}`, accept: "application/json" },
-        signal: AbortSignal.timeout(5_000) },
-    );
-    if (!res.ok) return null;
+    const res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) return { ok: false, error: `state read ${res.status}` };
     const arr = await res.json();
-    return Array.isArray(arr) && arr[0] ? arr[0] : null;
-  } catch {
-    return null;
+    if (!Array.isArray(arr)) return { ok: false, error: "state read: not a list" };
+    return { ok: true, row: arr[0] && typeof arr[0] === "object" ? arr[0] : null };
+  } catch (e) {
+    return { ok: false, error: `state read failed: ${e instanceof Error ? e.message : String(e)}` };
   }
+}
+
+/**
+ * Where one step of a walk starts: page one once the walk has finished (the top-up), else its cursor. Null when the
+ * state could not be read, and the step then reads no page and writes nothing, so a finished walk stays finished.
+ */
+export function walkStart(read: WalkStateRead): { done: boolean; cursor: string | null; fetched: number } | null {
+  if (!read.ok) return null;
+  const done = read.row?.complete === true;
+  return {
+    done,
+    cursor: done ? null : (typeof read.row?.cursor === "string" ? read.row.cursor : null),
+    fetched: typeof read.row?.fetched === "number" ? read.row.fetched : 0,
+  };
+}
+
+function readOrdersSyncState(account: string): Promise<WalkStateRead> {
+  return readWalkState(
+    `${SB_URL}/rest/v1/t212_orders_sync?account=eq.${encodeURIComponent(account)}&select=*`,
+    { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}`, accept: "application/json" },
+  );
+}
+
+async function readOrdersSync(account: string): Promise<Record<string, unknown> | null> {
+  const read = await readOrdersSyncState(account);
+  return read.ok ? read.row : null;
 }
 
 async function writeOrdersSync(row: Record<string, unknown>): Promise<boolean> {
@@ -1334,17 +1370,13 @@ export function metadataCurrencies(list: unknown[], tickers: string[]): Record<s
   return out;
 }
 
+function readDividendsSyncState(account: string): Promise<WalkStateRead> {
+  return readWalkState(`${SB_URL}/rest/v1/t212_dividends_sync?account=eq.${encodeURIComponent(account)}&select=*`, sbHeaders());
+}
+
 async function readDividendsSync(account: string): Promise<Record<string, unknown> | null> {
-  try {
-    const res = await fetch(`${SB_URL}/rest/v1/t212_dividends_sync?account=eq.${encodeURIComponent(account)}&select=*`, {
-      headers: sbHeaders(), signal: AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) return null;
-    const arr = await res.json();
-    return Array.isArray(arr) && arr[0] ? arr[0] : null;
-  } catch {
-    return null;
-  }
+  const read = await readDividendsSyncState(account);
+  return read.ok ? read.row : null;
 }
 
 async function upsertRows(table: string, rows: unknown | unknown[]): Promise<boolean> {
@@ -1374,15 +1406,15 @@ async function upsertRows(table: string, rows: unknown | unknown[]): Promise<boo
  * walk does. `/history/dividends` pages with `nextPagePath` (`?limit=50&cursor=…`) like the orders endpoint.
  */
 async function syncDividendsOnce(account: string, apiKey: string, apiSecret: string): Promise<Record<string, unknown>> {
-  const state = await readDividendsSync(account);
-  const done = state?.complete === true;
-  const cursor = done ? null : (typeof state?.cursor === "string" ? state.cursor : null);
+  // A state read that failed is not a first run: the step stops here and the walk stays where it was (`walkStart`).
+  const start = walkStart(await readDividendsSyncState(account));
+  if (!start) return { account, stream: "dividends", error: "sync state unreadable", complete: false, added: 0 };
+  const { done, cursor, fetched } = start;
   const url = new URL(T212_DIVIDENDS_URL);
   url.searchParams.set("limit", "50");
   if (cursor) url.searchParams.set("cursor", cursor);
   const attempts = apiSecret ? [basicAuthHeader(apiKey, apiSecret), apiKey] : [apiKey];
   const got = await historyPageRequest(url.toString(), attempts);
-  const fetched = typeof state?.fetched === "number" ? state.fetched : 0;
   if (!got.ok || !got.res.ok) {
     const message = got.ok ? `T212 ${got.res.status} ${(await got.res.text().catch(() => "")).slice(0, 200)}` : got.message;
     await upsertRows("t212_dividends_sync", { account, cursor, complete: done, fetched, last_error: message, updated_at: new Date().toISOString() });
@@ -1509,13 +1541,19 @@ async function syncOrdersOnce(
   apiKey: string,
   apiSecret: string,
 ): Promise<Record<string, unknown>> {
-  const state = await readOrdersSync(account);
-  const done = state?.complete === true;
+  // A state read that failed is not a first run (`walkStart`): taking it for one restarted the finished Invest walk on
+  // 2026-11-20, and its new fills stopped arriving. The step reads no page and writes nothing; the next one tries again.
+  const read = await readOrdersSyncState(account);
+  const start = walkStart(read);
+  if (!start) {
+    return { account, error: read.ok ? "sync state unreadable" : read.error, complete: false, added: 0 };
+  }
+  const state = read.ok ? read.row : null;
   // Once the walk has finished, keep re-reading the FIRST page rather
   // than stopping for good: it holds the newest fills, and the upsert
   // makes re-reading it free. Without this a completed backfill would
   // never notice another purchase.
-  const cursor = done ? null : (typeof state?.cursor === "string" ? state.cursor : null);
+  const { done, cursor } = start;
   const page = await fetchT212OrdersPage(apiKey, apiSecret, cursor);
   if (!page.ok) {
     await writeOrdersSync({ account, cursor, complete: done, fetched: state?.fetched ?? 0, last_error: page.message });

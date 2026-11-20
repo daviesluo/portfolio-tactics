@@ -145,7 +145,7 @@ import { ServiceWorkerBanner } from './sw-banner.jsx';
 import { reportError } from './ops_error.js';
 import { extPriceIsRealAh } from '../charts/indicators.js';
 import { isStrategyHolding, isUsEquity } from '../prices/ticker_class.js';
-import { fetchTrading212Holdings, fetchTrading212Orders, fetchTrading212Dividends, syncTrading212History, applyTrading212Answer, applyTrading212NightPrice, stripClosedFromPositions } from '../portfolio/trading212.js';
+import { fetchTrading212Holdings, fetchTrading212Orders, fetchTrading212Dividends, syncTrading212History, applyTrading212Answer, applyTrading212NightPrice, stripClosedFromPositions, heldAwaitingFills } from '../portfolio/trading212.js';
 import { applyFillLedgers, dividendEventsByTicker, fillCurrencyConflicts, withClosedFromFills, withDividendCosts } from '../portfolio/t212_fills.js';
 import { boardStrategiesOf, fetchBoardStrategies, preloadTickers, withBoardStrategies, withoutBoardStrategies } from '../portfolio/board_strategies.js';
 import { fetchOvernightSeries } from '../prices/overnight_intraday.js';
@@ -492,10 +492,17 @@ function Board({ isReadOnly, agents = false }) {
   // calls it may run twice.
   const heldSinceRef = useRef(/** @type {Map<string, number>} */ (new Map()));
   const heldReportedRef = useRef('');
+  // Reads the fill history now (the walk below sets it): a slice newly held for want of its sale's fill asks for it at
+  // once rather than at the walk's next two- or ten-minute step (`heldAwaitingFills`, 2026-11-20).
+  const historyNowRef = useRef(/** @type {null | (() => void)} */ (null));
   const noteHeldSlices = useCallback((/** @type {Array<{ ticker: string, reason: string }>} */ held) => {
     const now = Date.now();
     const keys = new Set(held.map((x) => `${x.ticker}|${x.reason}`));
     for (const k of [...heldSinceRef.current.keys()]) if (!keys.has(k)) heldSinceRef.current.delete(k);
+    const awaiting = new Set(heldAwaitingFills(held));
+    if (held.some((x) => awaiting.has(x.ticker) && !heldSinceRef.current.has(`${x.ticker}|${x.reason}`))) {
+      setTimeout(() => historyNowRef.current?.(), 0);
+    }
     for (const k of keys) if (!heldSinceRef.current.has(k)) heldSinceRef.current.set(k, now);
     const due = held.filter((x) => now - (heldSinceRef.current.get(`${x.ticker}|${x.reason}`) ?? now) >= 10 * 60e3);
     if (due.length === 0) return;
@@ -1439,12 +1446,26 @@ function Board({ isReadOnly, agents = false }) {
     if (isReadOnly) return undefined;
     let cancelled = false;
     let timer = /** @type {any} */ (null);
+    // One step at a time, and a step asked for out of turn (`historyNowRef`) at most once a minute: the history
+    // endpoint allows only a few calls a minute, and the one-minute job walks it too.
+    let running = false;
+    let askedAt = 0;
     const step = async () => {
-      if (cancelled) return;
+      if (cancelled || running) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         timer = setTimeout(step, 2 * 60 * 1000);
         return;
       }
+      running = true;
+      try { await walkOnce(); } finally { running = false; }
+    };
+    historyNowRef.current = () => {
+      if (cancelled || running || Date.now() - askedAt < 60_000) return;
+      askedAt = Date.now();
+      if (timer) clearTimeout(timer);
+      void step();
+    };
+    const walkOnce = async () => {
       const res = await syncTrading212History();
       if (cancelled || !res) return;
       const denied = (Array.isArray(res.accounts) ? res.accounts : [])
@@ -1481,7 +1502,7 @@ function Board({ isReadOnly, agents = false }) {
       timer = setTimeout(step, walked ? 2 * 60 * 1000 : 20000);
     };
     timer = setTimeout(step, 8000);
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    return () => { cancelled = true; historyNowRef.current = null; if (timer) clearTimeout(timer); };
   }, [isReadOnly, takeDividends]);
 
   // Freeze the native→USD rate each non-USD currency is first seen at,

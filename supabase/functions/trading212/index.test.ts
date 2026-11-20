@@ -50,6 +50,8 @@ import {
   constantTimeEqual,
   answerFor,
   historyPageRequest,
+  readWalkState,
+  walkStart,
 } from "./index.ts";
 
 const EMPTY_SYNC_HOLDINGS = {
@@ -1033,3 +1035,32 @@ Deno.test("answerFor: a slot-keyed closed holding is never named to a viewer, in
   const orders = answerFor("ro", "orders", RO_ORDERS, kept, RO_NOW, sold) as { orders: Array<{ ticker: string }> };
   assertEquals(orders.orders.some((o) => o.ticker === sold[0].alias), true);
 });
+
+Deno.test("walkStart — a state read that failed never restarts a finished walk (2026-11-20, a sale held off the board)", async () => {
+  // The Invest walk had finished and topped up page one every step. One step's state read failed and came back as
+  // "no row", the step took it for a first run, and the walk started over from page one with complete false: its
+  // top-up stopped, so a sale made later in that account never reached t212_orders while the walk went back
+  // through the history. The sold-out slice then stayed on the board, its stored fills one account short of zero.
+  const timedOut = (() => Promise.reject(new DOMException("Signal timed out.", "TimeoutError"))) as unknown as typeof fetch;
+  const dropped = (() => Promise.reject(new TypeError("error sending request"))) as unknown as typeof fetch;
+  const refused = (() => Promise.resolve(new Response("busy", { status: 503 }))) as unknown as typeof fetch;
+  const garbled = (() => Promise.resolve(Response.json({ message: "not a list" }))) as unknown as typeof fetch;
+  for (const f of [timedOut, dropped, refused, garbled]) {
+    const read = await readWalkState("https://db.example/sync?account=eq.invest", {}, f);
+    assertEquals(read.ok, false);
+    // No start at all: the step reads no page and writes nothing, so `complete` stays latched.
+    assertStrictEquals(walkStart(read), null);
+  }
+
+  // A finished walk read back is the top-up: page one, still done, its count kept.
+  const latched = (() => Promise.resolve(Response.json([{ account: "invest", complete: true, cursor: null, fetched: 120 }]))) as unknown as typeof fetch;
+  assertEquals(walkStart(await readWalkState("https://db.example/sync", {}, latched)), { done: true, cursor: null, fetched: 120 });
+  // A walk under way carries on from its cursor.
+  const midway = (() => Promise.resolve(Response.json([{ account: "invest", complete: false, cursor: "1700000000000", fetched: 50 }]))) as unknown as typeof fetch;
+  assertEquals(walkStart(await readWalkState("https://db.example/sync", {}, midway)), { done: false, cursor: "1700000000000", fetched: 50 });
+  // Only a read that answered with no row is a first run.
+  const none = (() => Promise.resolve(Response.json([]))) as unknown as typeof fetch;
+  assertEquals(await readWalkState("https://db.example/sync", {}, none), { ok: true, row: null });
+  assertEquals(walkStart({ ok: true, row: null }), { done: false, cursor: null, fetched: 0 });
+});
+

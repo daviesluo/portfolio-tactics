@@ -61,7 +61,8 @@ vi.mock('../prices/yahoo_fetch.js', async () => {
     refreshPrices: vi.fn(() => Promise.resolve({ updates: {}, source: 'live' })),
   };
 });
-vi.mock('../portfolio/trading212.js', () => ({
+vi.mock('../portfolio/trading212.js', async () => ({
+  heldAwaitingFills: (await vi.importActual('../portfolio/trading212.js')).heldAwaitingFills,
   fetchTrading212Holdings: vi.fn(() => Promise.resolve(null)),
   // The executed-fill read and the backfill driver both run from Board
   // effects, so a mock that omits either throws inside a passive effect
@@ -70,7 +71,7 @@ vi.mock('../portfolio/trading212.js', () => ({
   fetchTrading212Orders: vi.fn(() => Promise.resolve({ rows: [], complete: false })),
   fetchTrading212Dividends: vi.fn(() => Promise.resolve({ rows: [], complete: false })),
   syncTrading212History: vi.fn(() => Promise.resolve(null)),
-  applyTrading212Answer: () => ({ zeroed: [], held: [] }),
+  applyTrading212Answer: vi.fn(() => ({ zeroed: [], held: [] })),
   applyTrading212NightPrice: (h) => h,
   stripClosedFromPositions: (p) => p,
 }));
@@ -120,7 +121,7 @@ import { refreshPrices } from '../prices/yahoo_fetch.js';
 import { prefetchAllChartData } from '../prices/prefetch.js';
 import { fetchOvernightSeries } from '../prices/overnight_intraday.js';
 import { fetchHistoricalBatch, fetchTodayRegularClose } from '../prices/historical.js';
-import { fetchTrading212Dividends, syncTrading212History } from '../portfolio/trading212.js';
+import { fetchTrading212Dividends, syncTrading212History, applyTrading212Answer } from '../portfolio/trading212.js';
 import { loadPortfolioRemote, savePortfolioRemote, portfolioUserFingerprint, knownPortfolioVersion } from '../portfolio/portfolio_remote.js';
 import { prefetchAgentsDashboard } from '../agents/agents.js';
 
@@ -737,6 +738,43 @@ describe('App — the Trading 212 history walk', () => {
     visibility = 'visible';
     await vi.advanceTimersByTimeAsync(2 * 60_000);
     expect(syncTrading212History).toHaveBeenCalledTimes(1);
+  }, 20000);
+
+  // 2026-11-20 (Davies: "t212的卖单感觉更新的很慢，买单却很快"): a buy shows on the next positions read, but a holding sold
+  // out in full comes off only once its sale is among the stored fills, and the page used to wait for the walk's next
+  // step for them. A slice newly held for want of its fill now asks for the history at once, and once only.
+  it('reads the history at once when a sold-out slice waits for its fill, and only once for the same slice', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    visibility = 'visible';
+    setAdminToken();
+    vi.mocked(syncTrading212History).mockClear();
+    vi.mocked(applyTrading212Answer).mockImplementation(() => ({ zeroed: [], held: [{ ticker: 'NVDA', reason: 'its stored fills net to 5 shares, not zero' }] }));
+    vi.mocked(loadPortfolioRemote).mockResolvedValueOnce(/** @type {any} */ (structuredClone(SERVER_PORTFOLIO)));
+    try {
+      render(<App />);
+      await vi.advanceTimersByTimeAsync(5_000);               // before the walk's own first step at 8 s
+      expect(syncTrading212History).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(90_000);              // later refreshes hold the same slice: no second read
+      expect(syncTrading212History).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.mocked(applyTrading212Answer).mockImplementation(() => ({ zeroed: [], held: [] }));
+    }
+  }, 20000);
+
+  it('does not read the history for a slice held because the answer missed an account', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    visibility = 'visible';
+    setAdminToken();
+    vi.mocked(syncTrading212History).mockClear();
+    vi.mocked(applyTrading212Answer).mockImplementation(() => ({ zeroed: [], held: [{ ticker: 'NVDA', reason: "the broker's answer did not cover every account" }] }));
+    vi.mocked(loadPortfolioRemote).mockResolvedValueOnce(/** @type {any} */ (structuredClone(SERVER_PORTFOLIO)));
+    try {
+      render(<App />);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(syncTrading212History).not.toHaveBeenCalled();
+    } finally {
+      vi.mocked(applyTrading212Answer).mockImplementation(() => ({ zeroed: [], held: [] }));
+    }
   }, 20000);
 });
 

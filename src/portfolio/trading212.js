@@ -525,6 +525,22 @@ export function applyTrading212(holdings, t212Holdings, prices, today, orders) {
 /** Shares below this are float dust, not a position. */
 const SLICE_EPS = 1e-6;
 
+/** Why a slice is held when the positions answer itself is short: a history read cannot settle that one. */
+const SLICE_ANSWER_INCOMPLETE = "the broker's answer did not cover every account";
+
+/**
+ * The held slices a read of the fill history can settle: those the answer called sold but whose sale has not reached
+ * the stored fills. A buy, or a part sale, shows on the next positions read; a sale in full waits for its fill, which
+ * the walk used to fetch on its own two- or ten-minute clock (2026-11-20, Davies: "t212的卖单感觉更新的很慢，买单却很快").
+ * The page reads the history at once for these (app.jsx), so a sale reaches the board about as fast as a buy.
+ *
+ * @param {Array<{ ticker: string, reason: string }>} held  `settleSoldOutSlices`'s `held`
+ * @returns {string[]}
+ */
+export function heldAwaitingFills(held) {
+  return (Array.isArray(held) ? held : []).filter((x) => x && x.reason !== SLICE_ANSWER_INCOMPLETE).map((x) => x.ticker);
+}
+
 /**
  * A Trading 212 slice the broker no longer reports: sold out there, or not.
  *
@@ -555,7 +571,7 @@ export function settleSoldOutSlices(holdings, t212Holdings, orders, opts = {}) {
     if (!h || h.isCash || !(Number(h.t212Shares) > SLICE_EPS)) continue;
     if (Object.prototype.hasOwnProperty.call(t212Holdings, t)) continue;
     if (opts.complete !== true) {
-      held.push({ ticker: t, reason: "the broker's answer did not cover every account" });
+      held.push({ ticker: t, reason: SLICE_ANSWER_INCOMPLETE });
       continue;
     }
     let fills = 0, net = 0;
