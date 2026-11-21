@@ -88,3 +88,28 @@ describe('fxRateToUSD — EUR', () => {
     expect(currencySymbol('EUR')).toBe('€');
   });
 });
+
+// The audit of 2026-11-21 (A7): a currency outside the four the site fetches answered a rate of 1 and "not missing".
+describe('fxRateToUSD: a currency the site has no pair for', () => {
+  it('is missing, never a silent 1:1', () => {
+    for (const cur of ['CHF', 'SEK', 'JPY', 'CAD', 'GBX', 'xyz']) {
+      expect(fxRateToUSD(cur, {})).toEqual({ rate: 1, missing: true });
+      expect(fxRateToUSD(cur, { 'GBPUSD=X': { lastPrice: 1.25 } })).toEqual({ rate: 1, missing: true });
+    }
+  });
+
+  it('reads its pair when the market data holds one, in either direction', () => {
+    expect(fxRateToUSD('CHF', { 'CHFUSD=X': { lastPrice: 1.1 } })).toEqual({ rate: 1.1, missing: false });
+    expect(fxRateToUSD('JPY', { 'USDJPY=X': { lastPrice: 160 } })).toEqual({ rate: 1 / 160, missing: false });
+    expect(fxRateToUSD('JPY', { 'USDJPY=X': { lastPrice: 0 } })).toEqual({ rate: 1, missing: true });
+  });
+
+  it('the four known ones read only the pair the site fetches, and the dollar is the dollar', () => {
+    expect(fxRateToUSD('GBP', { 'GBPUSD=X': { lastPrice: 1.25 } })).toEqual({ rate: 1.25, missing: false });
+    expect(fxRateToUSD('GBP', { 'USDGBP=X': { lastPrice: 0.8 } })).toEqual({ rate: 1, missing: true });
+    expect(fxRateToUSD('CNY', { 'USDCNY=X': { lastPrice: 7 } })).toEqual({ rate: 1 / 7, missing: false });
+    expect(fxRateToUSD('HKD', { 'USDHKD=X': { lastPrice: 7.8 } })).toEqual({ rate: 1 / 7.8, missing: false });
+    expect(fxRateToUSD('HKD', { 'HKDUSD=X': { lastPrice: 0.128 } })).toEqual({ rate: 1, missing: true });
+    for (const cur of ['USD', '', null, undefined]) expect(fxRateToUSD(cur, {})).toEqual({ rate: 1, missing: false });
+  });
+});

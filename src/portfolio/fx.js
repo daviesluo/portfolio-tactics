@@ -90,37 +90,31 @@ export function currencyAffix(cur) {
  * below) preserves the old number-only return for callers that only
  * need the rate.
  *
+ *
+ * A currency outside those four reads its pair if the market data holds
+ * one (`<CCY>USD=X`, or `USD<CCY>=X` inverted), and is `missing` if not.
+ * Until 2026-11-21 it answered a rate of 1 and NOT missing (the audit,
+ * A7): a holding in francs or kronor, which a Trading 212 fill's stated
+ * currency can make, would have been valued 1:1 with no FX MISSING badge.
+ *
  * @param {string | null | undefined} currency
  * @param {Record<string, {lastPrice?: number}> | null | undefined} marketData
  * @returns {{ rate: number, missing: boolean }}
  */
 export function fxRateToUSD(currency, marketData) {
   if (!currency || currency === "USD") return { rate: 1, missing: false };
-  if (currency === "GBP") {
-    const r = marketData?.["GBPUSD=X"]?.lastPrice;
-    return (typeof r === "number" && r > 0)
-      ? { rate: r, missing: false }
-      : { rate: 1, missing: true };
-  }
-  if (currency === "EUR") {
-    const r = marketData?.["EURUSD=X"]?.lastPrice;
-    return (typeof r === "number" && r > 0)
-      ? { rate: r, missing: false }
-      : { rate: 1, missing: true };
-  }
-  if (currency === "CNY") {
-    const r = marketData?.["USDCNY=X"]?.lastPrice;
-    return (typeof r === "number" && r > 0)
-      ? { rate: 1 / r, missing: false }
-      : { rate: 1, missing: true };
-  }
-  if (currency === "HKD") {
-    const r = marketData?.["USDHKD=X"]?.lastPrice;
-    return (typeof r === "number" && r > 0)
-      ? { rate: 1 / r, missing: false }
-      : { rate: 1, missing: true };
-  }
-  return { rate: 1, missing: false };
+  const quote = (/** @type {string} */ symbol) => {
+    const r = marketData?.[symbol]?.lastPrice;
+    return typeof r === "number" && r > 0 ? r : null;
+  };
+  const direct = quote(`${currency}USD=X`);
+  const inverse = quote(`USD${currency}=X`);
+  // The four the site fetches, each in the direction Yahoo quotes it.
+  if (currency === "GBP" || currency === "EUR") return direct != null ? { rate: direct, missing: false } : { rate: 1, missing: true };
+  if (currency === "CNY" || currency === "HKD") return inverse != null ? { rate: 1 / inverse, missing: false } : { rate: 1, missing: true };
+  if (direct != null) return { rate: direct, missing: false };
+  if (inverse != null) return { rate: 1 / inverse, missing: false };
+  return { rate: 1, missing: true };
 }
 
 /**
