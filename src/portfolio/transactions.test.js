@@ -551,6 +551,78 @@ describe('the headline is the sum of the rows, same-day trades in the order they
   });
 });
 
+// The audit of 2026-11-21 (A6). `ts` is a broker fill's execution time, a hand-typed row's entry time, or absent, so on one
+// date it could put a sale before the purchase of the very shares it sold: the sale met an empty position, its Avg Cost
+// read 0 and the whole proceeds were booked as gain. Made-up numbers.
+describe('a sale waits for the same day\'s purchase of the shares it sells', () => {
+  const day = '2026-03-02';
+  const total = (/** @type {any[]} */ lots, /** @type {any[]} */ sells) => annotateLedger(lots, sells).reduce((s, r) => s + (r.gain ?? 0), 0);
+
+  it('a sale without a time, a purchase with one: +20, not the +120 of a sale from nothing', () => {
+    const lots = [{ date: day, shares: 10, cost: 10, ts: Date.parse(`${day}T10:00:00Z`) }];
+    const sells = [{ date: day, shares: 10, price: 12 }];
+    expect(realizedGain(lots, sells)).toBeCloseTo(20, 9);
+    expect(total(lots, sells)).toBeCloseTo(20, 9);
+    const walk = annotateLedger(lots, sells);
+    expect(walk.map((r) => r.kind)).toEqual(['buy', 'sell']);
+    expect(walk[1].acAfter).toBeCloseTo(10, 9);
+  });
+
+  it('a purchase typed today for an old date, a timed sale that day: +25, not +30', () => {
+    // 5 held at 10 from before. On the day: 5 more bought at 11 (typed weeks later, so its `ts` is late) and 10 sold at
+    // 13 (a fill, timed that day). Avg Cost 10.5, so 10 × (13 − 10.5) = 25. Sale first: 5 covered, 10 × (13 − 10) = 30.
+    const lots = [{ date: '2026-03-01', shares: 5, cost: 10 }, { date: day, shares: 5, cost: 11, ts: Date.parse('2026-04-20T09:00:00Z') }];
+    const sells = [{ date: day, shares: 10, price: 13, ts: Date.parse(`${day}T15:00:00Z`) }];
+    expect(realizedGain(lots, sells)).toBeCloseTo(25, 9);
+    expect(total(lots, sells)).toBeCloseTo(25, 9);
+  });
+
+  it('takes only the purchases it needs, in their own order, and only from its own date', () => {
+    const at = (/** @type {string} */ hm) => Date.parse(`${day}T${hm}:00Z`);
+    // Nothing held. Sale of 10 at 09:00; purchases of 10 at 11:00 and 10 at 14:00. The first covers it; the second stays after.
+    const lots = [{ date: day, shares: 10, cost: 10, ts: at('11:00') }, { date: day, shares: 10, cost: 20, ts: at('14:00') }];
+    const sells = [{ date: day, shares: 10, price: 12, ts: at('09:00') }];
+    expect(annotateLedger(lots, sells).map((r) => `${r.kind} ${r.price}`)).toEqual(['buy 10', 'sell 12', 'buy 20']);
+    expect(realizedGain(lots, sells)).toBeCloseTo(20, 9);
+    // A purchase the next day is never pulled back: an over-sale with nothing to wait for reads as it did.
+    const next = [{ date: '2026-03-03', shares: 10, cost: 10 }];
+    expect(annotateLedger(next, sells).map((r) => r.kind)).toEqual(['sell', 'buy']);
+    expect(realizedGain(next, sells)).toBeCloseTo(120, 9);
+  });
+
+  it('a sale that what is held covers keeps its place before a later purchase that day', () => {
+    const lots = [{ date: '2026-03-01', shares: 10, cost: 50 }, { date: day, shares: 10, cost: 100, ts: Date.parse(`${day}T15:00:00Z`) }];
+    const sells = [{ date: day, shares: 10, price: 120, ts: Date.parse(`${day}T10:00:00Z`) }];
+    expect(annotateLedger(lots, sells).map((r) => r.kind)).toEqual(['buy', 'sell', 'buy']);
+    expect(realizedGain(lots, sells)).toBeCloseTo(700, 9);
+  });
+
+  it('on 2,000 random one-day ledgers that never sell short, whatever the times say, sold out reads proceeds − cost', () => {
+    let seed = 20261121;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+    for (let n = 0; n < 2000; n++) {
+      // A true sequence that never over-sells and ends flat, then each row's `ts` kept, dropped or replaced by a late one.
+      /** @type {any[]} */ const lots = []; /** @type {any[]} */ const sells = [];
+      let held = 0, cost = 0, proceeds = 0;
+      const steps = 2 + Math.floor(rnd() * 5);
+      for (let i = 0; i < steps; i++) {
+        const true_ts = Date.parse(`${day}T08:00:00Z`) + i * 600000;
+        const r = rnd();
+        const ts = r < 0.34 ? { ts: true_ts } : r < 0.67 ? {} : { ts: Date.parse('2026-05-01T00:00:00Z') + Math.floor(rnd() * 1e6) };
+        if (held === 0 || rnd() < 0.5) {
+          const sh = 1 + Math.floor(rnd() * 9), px = 5 + Math.floor(rnd() * 20);
+          lots.push({ date: day, shares: sh, cost: px, ...ts }); held += sh; cost += sh * px;
+        } else {
+          const sh = 1 + Math.floor(rnd() * held), px = 5 + Math.floor(rnd() * 20);
+          sells.push({ date: day, shares: sh, price: px, ...ts }); held -= sh; proceeds += sh * px;
+        }
+      }
+      if (held > 0) { const px = 5 + Math.floor(rnd() * 20); sells.push({ date: day, shares: held, price: px }); proceeds += held * px; }
+      expect(realizedGain(lots, sells)).toBeCloseTo(proceeds - cost, 6);
+    }
+  });
+});
+
 // ---- One payment, one row (Davies, 2026-10-08: "一个公司同一批分红合在一起显示，目前是分账户分开的多行显示") ----
 // Trading 212 pays the ISA and the Invest account their own dividend, minutes apart. Synthetic numbers only.
 describe('one payment\'s dividends are one row of the history', () => {

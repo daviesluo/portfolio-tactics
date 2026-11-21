@@ -160,20 +160,63 @@ export function realizedGain(lots, sells, divs = null) {
 /**
  * One holding's buys, sales and dividends as a single walk, in date order
  * (same-day rows by `ts`; with neither, buys before sales before dividends,
- * the order the arrays are concatenated in).
+ * the order the arrays are concatenated in), then `sellAfterItsBuys`.
  * @param {Array<any>} lots
  * @param {Array<any>} sells
  * @param {Array<any> | null | undefined} divs
  */
 function ledgerEvents(lots, sells, divs) {
-  return [
+  return sellAfterItsBuys([
     ...cleanLots(lots).map((l) => ({ date: l.date, shares: l.shares, price: l.cost, ts: l.ts, kind: /** @type {'buy'|'sell'|'div'} */ ('buy'), amount: l.shares * l.cost })),
     ...cleanSells(sells).map((sl) => ({ date: sl.date, shares: sl.shares, price: sl.price, ts: sl.ts, kind: /** @type {'buy'|'sell'|'div'} */ ('sell'), amount: sl.shares * sl.price })),
     ...cleanDividends(divs).map((d) => ({
       date: d.date, shares: d.shares ?? 0, price: d.shares ? d.amount / d.shares : 0, ts: d.ts,
       kind: /** @type {'buy'|'sell'|'div'} */ ('div'), amount: d.amount,
     })),
-  ].sort((a, b) => a.date.localeCompare(b.date) || ((a.ts ?? 0) - (b.ts ?? 0)));
+  ].sort((a, b) => a.date.localeCompare(b.date) || ((a.ts ?? 0) - (b.ts ?? 0))));
+}
+
+/**
+ * A sale cannot come before the purchase of the shares it sells, so within one date a sale that would sell more than
+ * is held waits for that day's purchases, taken in their own order until it is covered.
+ *
+ * `ts` cannot settle this by itself, because it means two things: a broker fill's is when it executed, a hand-typed
+ * row's is when it was typed, and a row may have none. A purchase typed today for an old date carries today's `ts` and
+ * sorted after that date's timed sale; a sale without a `ts` sorted before the same day's timed purchase. Either way
+ * the sale met an empty position, its Avg Cost read 0 and the whole proceeds were booked as gain (the audit of
+ * 2026-11-21, A6: bought 10 at 10 and sold 10 at 12 on one day read +120, not +20). A sale that what is held already
+ * covers keeps its place: sold in the morning and bought back in the afternoon stays that way.
+ * @template {{ date: string, kind: 'buy'|'sell'|'div', shares: number }} E
+ * @param {E[]} events  in date order
+ * @returns {E[]}
+ */
+function sellAfterItsBuys(events) {
+  /** @type {E[]} */
+  const out = [];
+  let held = 0;
+  for (let i = 0; i < events.length;) {
+    let j = i;
+    while (j < events.length && events[j].date === events[i].date) j++;
+    const day = events.slice(i, j);
+    while (day.length) {
+      const t = day[0];
+      if (t.kind === 'sell' && t.shares > held + 1e-9) {
+        const k = day.findIndex((e) => e.kind === 'buy');
+        if (k > 0) {
+          const [buy] = day.splice(k, 1);
+          out.push(buy);
+          held += buy.shares;
+          continue;
+        }
+      }
+      day.shift();
+      out.push(t);
+      if (t.kind === 'buy') held += t.shares;
+      else if (t.kind === 'sell') held = Math.max(0, held - t.shares);
+    }
+    i = j;
+  }
+  return out;
 }
 
 /**
