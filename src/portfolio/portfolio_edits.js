@@ -11,6 +11,7 @@
 
 import { detectCurrency } from './fx.js';
 import { netPosition } from './transactions.js';
+import { localToday } from './lots.js';
 
 /**
  * @param {{
@@ -134,7 +135,7 @@ export function createPortfolioEditHandlers({ setPortfolio, isReadOnly }) {
     ticker = ticker.toUpperCase().trim();
     if (!ticker) return;
     const currency = detectCurrency(ticker);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localToday();
     const lotDate = buyDate || today;
     setPortfolio(p => {
       const existing = p.holdings[ticker];

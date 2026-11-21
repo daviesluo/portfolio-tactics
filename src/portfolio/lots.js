@@ -35,6 +35,30 @@
  * @param {Array<{date?: any, shares?: any, cost?: any, ts?: any, src?: any}>} lots
  * @returns {Array<{date: string, shares: number, cost: number, ts?: number, src?: string}>}
  */
+/**
+ * The local calendar date, YYYY-MM-DD: what an `<input type="date">` calls today, and what a person means by it.
+ * `toISOString()` gives the UTC date, a day behind it east of Greenwich in the first hours of the day (British Summer
+ * Time's first hour among them) and a day ahead of it in the evening west of it.
+ * @param {Date} [now]
+ */
+export function localToday(now = new Date()) {
+  const two = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+}
+
+/**
+ * The latest date a ledger row may carry: the later of the local date and the UTC one. The guards below drop a row
+ * dated after it. Until 2026-11-21 they compared with the UTC date alone (improvement plan item 17), so a row dated
+ * the local today was dropped on save, without a word, while the local date was ahead of UTC. The UTC date stays
+ * allowed because a broker fill is dated by its UTC timestamp.
+ * @param {Date} [now]
+ */
+export function latestRowDate(now = new Date()) {
+  const utc = now.toISOString().slice(0, 10);
+  const local = localToday(now);
+  return local > utc ? local : utc;
+}
+
 export function cleanLots(lots) {
   if (!Array.isArray(lots)) return [];
   /** @type {Array<{date: string, shares: number, cost: number, ts?: number, src?: string}>} */
@@ -45,8 +69,8 @@ export function cleanLots(lots) {
   // future date and skips the lot, while the scoreboard reads
   // h.shares directly — leaving the YTD chart and the scoreboard
   // displaying different totals for the same holding. Gate here so
-  // both paths agree.
-  const today = new Date().toISOString().slice(0, 10);
+  // both paths agree. "Future" is after `latestRowDate()`.
+  const today = latestRowDate();
   for (const l of lots) {
     const date = typeof l?.date === 'string' ? l.date.trim() : '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { cleanLots, totalShares, weightedAvgCost } from './lots.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { cleanLots, totalShares, weightedAvgCost, localToday, latestRowDate } from './lots.js';
+import { cleanSells, cleanDividends } from './transactions.js';
 
 describe('cleanLots', () => {
   it('passes through valid lots and sorts ascending by date', () => {
@@ -104,5 +105,48 @@ describe('weightedAvgCost', () => {
 
   it('no lots / zero shares → 0 (avoids /0 NaN)', () => {
     expect(weightedAvgCost([])).toBe(0);
+  });
+});
+
+// Improvement plan item 17 (2026-11-21). "Today" came from `toISOString()`, the UTC date, in the modals and in the
+// guards that drop a future-dated row: in the first hour of a British summer day the picker's today is a day ahead of
+// it, and a row dated that day was dropped on save without a word.
+describe('a row dated the local today is kept, whatever the UTC date', () => {
+  const tz = process.env.TZ;
+  const at = (/** @type {string} */ zone, /** @type {string} */ iso) => {
+    process.env.TZ = zone;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(iso));
+  };
+  afterEach(() => {
+    vi.useRealTimers();
+    if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
+  });
+
+  it('00:30 in London in July: local 07-15, UTC still 07-14', () => {
+    at('Europe/London', '2026-07-14T23:30:00Z');
+    expect(localToday()).toBe('2026-07-15');
+    expect(latestRowDate()).toBe('2026-07-15');
+    const row = { date: '2026-07-15', shares: 1, cost: 10 };
+    expect(cleanLots([row])).toHaveLength(1);
+    expect(cleanSells([{ date: '2026-07-15', shares: 1, price: 10 }])).toHaveLength(1);
+    expect(cleanDividends([{ date: '2026-07-15', amount: 3 }])).toHaveLength(1);
+    // Tomorrow is still the future.
+    expect(cleanLots([{ ...row, date: '2026-07-16' }])).toEqual([]);
+    expect(cleanSells([{ date: '2026-07-16', shares: 1, price: 10 }])).toEqual([]);
+    expect(cleanDividends([{ date: '2026-07-16', amount: 3 }])).toEqual([]);
+  });
+
+  it('21:00 in New York: local 07-14 is the picker\'s today, and a fill dated by its UTC day (07-15) is kept too', () => {
+    at('America/New_York', '2026-07-15T01:00:00Z');
+    expect(localToday()).toBe('2026-07-14');
+    expect(latestRowDate()).toBe('2026-07-15');
+    expect(cleanLots([{ date: '2026-07-15', shares: 1, cost: 10 }])).toHaveLength(1);
+    expect(cleanLots([{ date: '2026-07-16', shares: 1, cost: 10 }])).toEqual([]);
+  });
+
+  it('at noon UTC the two dates are one', () => {
+    at('UTC', '2026-07-15T12:00:00Z');
+    expect([localToday(), latestRowDate()]).toEqual(['2026-07-15', '2026-07-15']);
   });
 });

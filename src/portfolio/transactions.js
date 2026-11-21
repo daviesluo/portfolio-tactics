@@ -34,7 +34,7 @@
 // (bought back after a sale, say, or paid after the last sale) is realized
 // as it arrives. With no dividends every figure is what it was before.
 
-import { cleanLots } from './lots.js';
+import { cleanLots, latestRowDate } from './lots.js';
 
 // Holdings the user auto-DCAs into via the Trading 212 daily sync. Their
 // lots are machine-written each day (applyTrading212 in trading212.js
@@ -59,7 +59,7 @@ export function cleanSells(sells) {
   if (!Array.isArray(sells)) return [];
   /** @type {Array<{date: string, shares: number, price: number, ts?: number, src?: string}>} */
   const out = [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = latestRowDate();
   for (const s of sells) {
     const date = typeof s?.date === 'string' ? s.date.trim() : '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
@@ -87,7 +87,7 @@ export function cleanDividends(divs) {
   if (!Array.isArray(divs)) return [];
   /** @type {Array<{date: string, amount: number, ts?: number, shares?: number}>} */
   const out = [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = latestRowDate();
   for (const d of divs) {
     const date = typeof d?.date === 'string' ? d.date.trim() : '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today) continue;

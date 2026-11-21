@@ -5,7 +5,7 @@
 import React from 'react';
 import { fmtSharesFor as fmtShFor, pctColor as pctClo, normalizeDecimalInput } from '../app/formatters.js';
 import { currencySymbol as curSym, detectCurrency } from '../portfolio/fx.js';
-import { cleanLots } from '../portfolio/lots.js';
+import { cleanLots, localToday, latestRowDate } from '../portfolio/lots.js';
 import { ledgerProvenance, SRC_OTHER } from '../portfolio/t212_fills.js';
 import { cleanSells, netPosition, realizedGain, toLedgerRows, fromLedgerRows } from '../portfolio/transactions.js';
 import { Modal, useConfirm } from './modals.jsx';
@@ -21,7 +21,8 @@ const DISCARD_CONFIRM = /** @type {const} */ ({
 // weighted-average cost are derived from the rows on save and become the
 // holding's `shares`/`cost` (lots are the source of truth for the YTD chart).
 function EditTickerModal({ ticker, holding, positions, t212Orders = /** @type {any[]} */ ([]), t212OrdersComplete = false, dividends = /** @type {any[]} */ ([]), onClose, onSave, onDelete, onMove }) {
-  const today = new Date().toISOString().slice(0, 10);
+  // The local date, as the date picker means it (the UTC date until 2026-11-21, improvement plan item 17).
+  const today = localToday();
   // ONE list, newest at the top, buys and sells together — a holding's
   // history read in the order it happened, which is how it reads on the
   // broker's own statement. Two grids was fine for four hand-typed rows
@@ -106,7 +107,7 @@ function EditTickerModal({ ticker, holding, positions, t212Orders = /** @type {a
   // half-typed shares/price rows are normal mid-edit states a warning
   // would nag on. Counts buy + sell rows.
   const futureCount = rows.filter(
-    (r) => typeof r?.date === 'string' && r.date.trim() > today,
+    (r) => typeof r?.date === 'string' && r.date.trim() > latestRowDate(),
   ).length;
 
   // Where the rows above came from. The refresh tick rebuilds a synced
@@ -354,7 +355,7 @@ function AddTickerModal({ posKey, position, onClose, onAdd }) {
   const [shares, setShares] = React.useState("");
   const [cost, setCost] = React.useState("");
   const [lastPrice, setLastPrice] = React.useState("");
-  const [buyDate, setBuyDate] = React.useState(() => new Date().toISOString().slice(0, 10));
+  const [buyDate, setBuyDate] = React.useState(() => localToday());
 
   // Currency follows the ticker the user is typing — 6-digit → ¥, .L → £,
   // euro-zone suffix (.PA/.AS/.DE/…) → €, else $.
@@ -392,7 +393,7 @@ function AddTickerModal({ posKey, position, onClose, onAdd }) {
           <input className="inp mono" value={lastPrice} onChange={(e) => setLastPrice(normalizeDecimalInput(e.target.value))} inputMode="decimal" />
         </FormRow>
         <FormRow label="Buy date" hint="Used by the YTD performance chart to compute historical portfolio value">
-          <input type="date" className="inp mono" value={buyDate} onChange={(e) => setBuyDate(e.target.value)} max={new Date().toISOString().slice(0, 10)} />
+          <input type="date" className="inp mono" value={buyDate} onChange={(e) => setBuyDate(e.target.value)} max={localToday()} />
         </FormRow>
       </div>
 
