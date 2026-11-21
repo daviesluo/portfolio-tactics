@@ -45,6 +45,7 @@ import { fetchT212Positions } from "../_shared/t212_positions.ts";
 import { t212TickerToYahoo } from "../_shared/t212_tickers.ts";
 import { auditRecorder, isAuditCall } from "../_shared/recorder_watch.ts";
 import { beatKeyOfRequest, writeBeat } from "../_shared/beats.ts";
+import { bearerIs } from "../_shared/token.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -221,7 +222,7 @@ export async function handle(req: Request, deps: {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   const auth = req.headers.get("Authorization") ?? "";
-  if (!deps.cronSecret || auth !== `Bearer ${deps.cronSecret}`) {
+  if (!bearerIs(auth, deps.cronSecret)) {
     return new Response("forbidden", { status: 403, headers: CORS });
   }
 

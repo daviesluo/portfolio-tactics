@@ -49,7 +49,7 @@
 //   500 — DB write failed
 
 import { isUsMarketHolidayAt, usRegularCloseMinAt } from "../_shared/us_market_calendar.ts";
-import { b64url, sign } from "../_shared/token.ts";
+import { b64url, bearerIs, sign } from "../_shared/token.ts";
 import { reportServerError } from "../_shared/ops.ts";
 import { fetchT212Positions } from "../_shared/t212_positions.ts";
 import { t212TickerToYahoo } from "../_shared/t212_tickers.ts";
@@ -493,7 +493,7 @@ export async function handle(req: Request, deps: {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
     const auth = req.headers.get("Authorization") ?? "";
-    if (!deps.cronSecret || auth !== `Bearer ${deps.cronSecret}`) {
+    if (!bearerIs(auth, deps.cronSecret)) {
       return new Response("forbidden", { status: 403, headers: CORS });
     }
 

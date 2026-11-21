@@ -49,6 +49,24 @@ export function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * A shared secret, compared in constant time as SHA-256 digests: the digests are one length whatever was presented, so
+ * neither a guess's length nor how much of it was right is told by the clock. A missing or empty secret on either side
+ * is a refusal. The one copy (the audit of 2026-11-21, A16): `monitor` and the three desks' ingests each carried it.
+ */
+export async function secretMatches(given: string | null | undefined, secret: string): Promise<boolean> {
+  if (!secret || !given) return false;
+  const [a, b] = await Promise.all([crypto.subtle.digest("SHA-256", enc.encode(given)), crypto.subtle.digest("SHA-256", enc.encode(secret))]);
+  const hex = (x: ArrayBuffer) => [...new Uint8Array(x)].map((v) => v.toString(16).padStart(2, "0")).join("");
+  return constantTimeEqual(hex(a), hex(b));
+}
+
+/** `Authorization: Bearer <secret>`, the scheduler's bearer among them, compared in constant time. An empty secret refuses. */
+export function bearerIs(authorization: string | null | undefined, secret: string): boolean {
+  const auth = authorization ?? "";
+  return secret !== "" && auth.startsWith("Bearer ") && constantTimeEqual(auth.slice(7).trim(), secret);
+}
+
 export async function verifyToken(token: string, secret = SECRET): Promise<Verified | null> {
   if (!secret) return null;
   const [payloadB64, sigB64] = token.split(".");
