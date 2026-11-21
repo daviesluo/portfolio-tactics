@@ -283,6 +283,13 @@ describe('the site gate: its parts', () => {
     expect(script).toContain('"/__session"');
     expect(script).toContain("sessionStorage.setItem('dp.token', body.token)");
     expect(script).toContain("q.get('pwd')");
+    // The device proof (the auth function's budget across addresses, 2026-11-21): sent with the password when this
+    // browser holds one, kept when a sign-in answers one, and the budget's own refusal said as such, in minutes.
+    expect(script).toContain("JSON.stringify({ password: p, device: device() })");
+    expect(script).toContain("localStorage.setItem('dp.device', body.device)");
+    expect(script).toMatch(/body\.error === 'busy'[\s\S]*Try again in ' \+ m \+ ' min\.'/);
+    // The script runs as written: no syntax error hides behind the CSP hash.
+    expect(() => new Function(script)).not.toThrow();
   });
 
   it("the build fills the source's CONFIG line, takes the headers of _headers' /* block, and lists every agents-* file", () => {

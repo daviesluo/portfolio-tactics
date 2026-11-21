@@ -102,6 +102,8 @@ export type AppAuth = {
   agents?: boolean;
   locked?: boolean;
   lockUntil?: number;
+  /** With `locked`: not this address's lockout but the hour's budget across addresses; the wait is minutes. */
+  busy?: boolean;
   /** The server did not answer the check (a 5xx, a timeout, no network): the password was never judged. */
   unavailable?: boolean;
   /** The HTTP status it answered with, 0 when nothing came back. */

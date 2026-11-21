@@ -70,6 +70,10 @@ const STORAGE_KEYS = {
   // straight after a reload too, when memory is empty — so it opens drawn
   // and refreshes behind. A key no earlier version wrote, so it needs no
   // schema step: a missing row reads as nothing kept.
+  // This browser's proof that it has signed in before (the auth function's `device`, 2026-11-21): sent with every
+  // sign-in, so the hour's budget of wrong passwords across addresses never holds a browser the owner has used. Kept
+  // across sign-outs on purpose: it opens nothing by itself.
+  device:        'dp.device',
   agentsCache:   'dp.agentsCache', // { ts, data: { at, dash, charts: { 'strategy|symbol': { at, chart } } } }
   // The analyst targets the Target price page last read (tables/targets_data.js), so its first open after a reload
   // paints them at once. A key no earlier version wrote: no schema step.
@@ -218,6 +222,10 @@ export const Storage = {
   loadAuth:  () => readJSON(STORAGE_KEYS.auth, { lockoutUntil: 0, attempts: 0 }),
   saveAuth:  (s) => writeJSON(STORAGE_KEYS.auth, s),
   clearAuth: () => { try { localStorage.removeItem(STORAGE_KEYS.auth); } catch (_) {} },
+  /** The device proof (STORAGE_KEYS.device), or '' when there is none or storage refuses. @returns {string} */
+  loadDevice: () => { try { return localStorage.getItem(STORAGE_KEYS.device) || ''; } catch { return ''; } },
+  /** @param {unknown} t */
+  saveDevice: (t) => { if (typeof t !== 'string' || !t) return; try { localStorage.setItem(STORAGE_KEYS.device, t); } catch { /* storage refused */ } },
   loadPrefs: () => readJSON(STORAGE_KEYS.prefs, { hideValues: false }),
   savePrefs: (p) => writeJSON(STORAGE_KEYS.prefs, p),
   // Newest acknowledged ops-error timestamp (ms epoch); 0 when the

@@ -326,6 +326,21 @@ function App() {
     );
   }
 
+  // The hour's budget of wrong passwords across addresses is spent, and this browser has never signed in: its password
+  // was not judged. Minutes, not the address's own day-long lockout below.
+  if (auth && auth.locked && auth.busy) {
+    const minutesLeft = Math.max(1, Math.ceil(((auth.lockUntil ?? 0) - Date.now()) / 1000 / 60));
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
+        <div style={{ textAlign: 'center', padding: '40px', border: '1px solid #2a2a2a', borderRadius: '4px' }}>
+          <div style={{ color: '#fa3', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '14px', marginBottom: '8px' }}>SIGN-IN BUSY</div>
+          <div style={{ color: '#888', fontFamily: 'monospace', fontSize: '12px' }}>Too many wrong passwords from elsewhere this hour, so yours was not checked.</div>
+          <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px', marginTop: '6px' }}>Try again in {minutesLeft} min.</div>
+        </div>
+      </div>
+    );
+  }
+
   if (auth && auth.locked) {
     const hoursLeft = Math.ceil(((auth.lockUntil ?? 0) - Date.now()) / 1000 / 60 / 60);
     return (

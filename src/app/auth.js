@@ -150,7 +150,9 @@ export function authOfRole(role) {
 
 // Async: hit the auth Edge Function. Resolves to:
 //   { isReadOnly }                — successful login, token already stored
-//   { locked: true, lockUntil }   — too many failed attempts
+//   { locked: true, lockUntil }   — too many failed attempts from this address
+//   { locked: true, lockUntil, busy: true } — too many from elsewhere this hour, and this browser has
+//                                   never signed in: not judged; try again in minutes
 //   { unavailable: true, status } — the server never judged the password: a 5xx, a
 //                                   timeout or no network (status 0). Shown as such,
 //                                   never as a wrong password (2026-10-02: the database
@@ -168,7 +170,9 @@ export async function authenticate(pw) {
         "Authorization": `Bearer ${SB_ANON}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ password: pw }),
+      // `device`: this browser's proof that it has signed in before, when it holds one (Storage.loadDevice). The
+      // server never holds such a browser to the hour's budget of wrong passwords from elsewhere.
+      body: JSON.stringify({ password: pw, device: Storage.loadDevice() || undefined }),
       // Auth has the 500ms wrong-password throttle baked in, plus a
       // 5s PostgREST timeout per Edge call. 10s here covers both
       // plus cold-start latency so the UI doesn't spin forever if
@@ -177,9 +181,10 @@ export async function authenticate(pw) {
     });
 
     if (res.ok) {
-      const { token, role, site } = await res.json();
+      const { token, role, site, device } = await res.json();
       if (token && role) {
         setAppToken(token);
+        Storage.saveDevice(device);
         await openGateSession(site);
         return authOfRole(role);
       }
@@ -188,7 +193,9 @@ export async function authenticate(pw) {
     if (res.status === 429) {
       const body = await res.json().catch(() => ({}));
       const lockUntil = Number(body?.lockoutUntil) || (Date.now() + 24 * 60 * 60 * 1000);
-      return { locked: true, lockUntil };
+      // `busy`: not this address's lockout but the hour's budget of wrong passwords across addresses, spent by
+      // others; the password was not judged, and the wait is minutes.
+      return body?.error === 'busy' ? { locked: true, lockUntil, busy: true } : { locked: true, lockUntil };
     }
 
     if (res.status === 401) return null;

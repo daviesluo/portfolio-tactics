@@ -4,10 +4,14 @@
 // browser bundle. On success returns a short-lived signed token that the
 // `data` Edge Function trusts.
 //
-// POST /functions/v1/auth   body: { password: string }
-//   200 OK  { token, site, role: "admin" | "ro" }   site: the site gate's session (Ed25519; see "The site's session" below)
+// POST /functions/v1/auth   body: { password: string, device?: string }
+//   200 OK  { token, site, role: "admin" | "ro", device? }   site: the site gate's session (Ed25519; see "The site's
+//           session" below); device: a proof for a browser that had none, which it keeps and sends with later sign-ins
 //   401 Unauthorized
-//   429 Too Many Requests   { lockoutUntil: number }
+//   429 Too Many Requests   { error: "locked" | "busy", lockoutUntil: number }   locked: this address, three wrong
+//           passwords; busy: the hour's budget of wrong passwords across addresses is spent, and this device has never
+//           signed in (`signIn` below)
+//   503 the lockout state could not be read or the attempt could not be counted: nothing was judged
 //
 // POST /functions/v1/auth?action=viewer-token   Authorization: Bearer <CRON_SECRET>
 //   The operator's route (Davies, 2026-10-29: "以后每次页面改动等你都去网站实际验证"): a read-only token for checking
@@ -30,7 +34,9 @@
 // Lockout state lives in `public.auth_attempts` (ip primary key, attempts
 // counter, lockout_until unix ms). Anon role has NO access — we only read
 // and write via the auto-injected SUPABASE_SERVICE_ROLE_KEY. Three wrong
-// passwords from the same IP triggers a 24h lockout.
+// passwords from the same IP triggers a 24h lockout. Beside it, since
+// 2026-11-21, `public.auth_wrong_minutes` counts wrong passwords across
+// addresses (migration 0360), and the form fails closed: see `signIn`.
 //
 // The token is HMAC-SHA256 over the payload with APP_AUTH_SECRET; format is
 // `<base64url(payload)>.<base64url(sig)>`. `data/index.ts` re-derives the
@@ -216,7 +222,7 @@ function json(status: number, body: Record<string, unknown>): Response {
   });
 }
 
-// ---------------- IP-keyed lockout state ----------------
+// ---------------- The sign-in's state: this address's lockout, and the hour's budget ----------------
 const SB_HEADERS = {
   "apikey": SERVICE_KEY,
   "Authorization": `Bearer ${SERVICE_KEY}`,
@@ -233,37 +239,107 @@ const SB_HEADERS = {
 // for unit testing.
 const clientIp = clientIpFromHeaders;
 
-type LockoutCheck = { lockout_until: number | null };
+/**
+ * Wrong passwords an hour, across every address that has never signed in, before sign-in is refused to such addresses
+ * (the audit of 2026-11-21, A2). The lockout below is per address, and addresses are cheap; this budget is not. It
+ * never holds a device that has signed in before (`isKnownDevice`), so nobody can lock the owner out of his own site
+ * by guessing from elsewhere: his browsers carry the proof, and are judged as before.
+ */
+export const GLOBAL_WRONG_MAX = 20;
+/** What a refused address is told to wait: the page shows it, and the budget's hour slides meanwhile. */
+export const BUSY_RETRY_MS = 15 * 60 * 1000;
+/** A device's proof is good this long after it was issued. */
+export const DEVICE_MAX_AGE_MS = 400 * 24 * 60 * 60 * 1000;
+/** Signed with the app's secret under its own label, so it can never pass for an app token (which carries a role). */
+const DEVICE_LABEL = "dp-device-v1.";
 
-// Cheap read-only check — used as a fast-path before validating the password.
-// A stale value here is harmless: if the row was just locked by another
-// request the bump RPC below will catch it; if the row was just unlocked
-// we'll just hash an extra password.
-async function getLockout(ip: string): Promise<number | null> {
-  const url = `${SUPABASE_URL}/rest/v1/auth_attempts?ip=eq.${encodeURIComponent(ip)}&select=lockout_until`;
-  const res = await fetch(url, { headers: SB_HEADERS, signal: AbortSignal.timeout(5_000) });
-  if (!res.ok) return null;
-  const rows = (await res.json()) as LockoutCheck[];
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-  return rows[0].lockout_until ?? null;
+/** A device's proof that it has signed in: `{ kind: "device", iat }`, issued with every successful sign-in from an unknown one. */
+export async function makeDeviceToken(secret = SECRET, now = Date.now()): Promise<string> {
+  const payload = b64url(JSON.stringify({ kind: "device", iat: now }));
+  return `${payload}.${await sign(DEVICE_LABEL + payload, secret)}`;
+}
+
+/** Whether `token` is a proof this function issued with `secret`, not older than `DEVICE_MAX_AGE_MS`. */
+export async function isKnownDevice(token: unknown, secret = SECRET, now = Date.now()): Promise<boolean> {
+  if (!secret || typeof token !== "string" || token.length > 512) return false;
+  const [p, s] = token.split(".");
+  if (!p || !s) return false;
+  if (!constantTimeEqual(await sign(DEVICE_LABEL + p, secret), s)) return false;
+  try {
+    const padded = p.replace(/-/g, "+").replace(/_/g, "/");
+    const o = JSON.parse(atob(padded + "=".repeat((4 - padded.length % 4) % 4)));
+    return o?.kind === "device" && typeof o.iat === "number" && o.iat <= now + 5 * 60_000 && now - o.iat <= DEVICE_MAX_AGE_MS;
+  } catch {
+    return false;
+  }
+}
+
+/** The address's lockout (unix ms, or null) and the hour's wrong passwords across unknown devices. */
+export type SignInState = { lockoutUntil: number | null; wrongHour: number };
+type BumpResult = { attempts_out: number; lockout_until_out: number | null; locked_out: boolean };
+
+/**
+ * Both in one read (`auth_state`, migration 0360). Null when the state cannot be read: the caller then judges nothing.
+ * A database from before that migration answers that it has no such function (404, PGRST202): then the lockout is read
+ * from its table as before and the budget is 0, so this function and its migration may land in either order.
+ */
+async function readState(ip: string): Promise<SignInState | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/auth_state`, {
+      method: "POST", headers: SB_HEADERS, body: JSON.stringify({ _ip: ip }), signal: AbortSignal.timeout(5_000),
+    });
+    if (res.ok) {
+      const rows = await res.json();
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (!row || typeof row !== "object") return null;
+      return { lockoutUntil: row.lockout_until == null ? null : Number(row.lockout_until), wrongHour: Number(row.wrong_hour) || 0 };
+    }
+    const text = await res.text();
+    if (res.status !== 404 || !/PGRST202/.test(text)) return null;
+    const old = await fetch(`${SUPABASE_URL}/rest/v1/auth_attempts?ip=eq.${encodeURIComponent(ip)}&select=lockout_until`, {
+      headers: SB_HEADERS, signal: AbortSignal.timeout(5_000),
+    });
+    if (!old.ok) return null;
+    const rows = await old.json();
+    return { lockoutUntil: Array.isArray(rows) && rows[0] ? rows[0].lockout_until ?? null : null, wrongHour: 0 };
+  } catch {
+    return null;
+  }
 }
 
 // Atomic increment-or-lockout via the bump_auth_attempt SQL function. Doing
 // the read-modify-write in a single statement avoids the TOCTOU race that
 // Codex flagged: if two wrong-password requests for the same IP land at the
 // same time they each see the OTHER's increment, so the threshold can't
-// be undercounted by parallel traffic.
-type BumpResult = { attempts_out: number; lockout_until_out: number | null; locked_out: boolean };
-async function bumpAttempt(ip: string, max: number, lockoutMs: number): Promise<BumpResult | null> {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/bump_auth_attempt`, {
-    method: "POST",
-    headers: SB_HEADERS,
-    body: JSON.stringify({ _ip: ip, _max: max, _lockout_ms: lockoutMs }),
-    signal: AbortSignal.timeout(5_000),
-  });
-  if (!res.ok) return null;
-  const rows = (await res.json()) as BumpResult[];
-  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+// be undercounted by parallel traffic. Null when it could not be counted.
+async function bumpAttempt(ip: string): Promise<BumpResult | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/bump_auth_attempt`, {
+      method: "POST",
+      headers: SB_HEADERS,
+      body: JSON.stringify({ _ip: ip, _max: MAX_ATTEMPTS, _lockout_ms: LOCKOUT_MS }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const rows = (await res.json()) as BumpResult[];
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One more wrong password in the hour's budget; the hour's count after it, or null when it could not be counted. */
+async function bumpBudget(): Promise<number | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/auth_budget_bump`, {
+      method: "POST", headers: SB_HEADERS, body: "{}", signal: AbortSignal.timeout(5_000),
+    });
+    if (!res.ok) return null;
+    const n = Number(await res.json());
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 async function clearAttempts(ip: string): Promise<void> {
@@ -274,13 +350,78 @@ async function clearAttempts(ip: string): Promise<void> {
   });
 }
 
-// Direct insert into public.ops_errors via the service-role key (RLS
-// denies anon; service key bypasses). Used by the top-level try/catch
-// wrap below so a runtime crash in this Edge Function becomes a row
-// the admin ⚠ badge surfaces, instead of a silent 500 the user only
-// notices when the page UX visibly breaks. 3 s timeout + swallowed
-// failure: observability must never make a real error worse.
-// reportServerError now lives in ../_shared/ops.ts (imported above).
+export type SignInDeps = {
+  env: { adminPwd: string; roPwd: string; secret: string };
+  now: () => number;
+  state: (ip: string) => Promise<SignInState | null>;
+  bump: (ip: string) => Promise<BumpResult | null>;
+  bumpBudget: () => Promise<number | null>;
+  clear: (ip: string) => Promise<void>;
+  wait: (ms: number) => Promise<void>;
+  report: (kind: string, o: { message?: string; context?: unknown }) => Promise<void>;
+};
+
+/**
+ * The password form (POST, `{ password, device? }`), with everything outside it injected so its order is pinned:
+ *
+ *   1. the state, this address's lockout and the hour's budget. UNREADABLE: 503, and nothing is judged. Until
+ *      2026-11-21 an unreadable lockout read as "not locked" and an uncountable wrong password as "attempt 0 of 3", so
+ *      while the database answered errors the only limit left was the half-second wait, which runs in parallel;
+ *   2. locked out: 429 with when it ends, as before;
+ *   3. the budget (`GLOBAL_WRONG_MAX`), for a device that cannot prove it has signed in before: spent, 429 `busy` with
+ *      a time to try again, the password neither judged nor counted;
+ *   4. the password, both compares in constant time. Right: the address's count is cleared and the answer carries the
+ *      app's token, the site's, and a proof for a device that had none;
+ *   5. wrong: the wait, then the address's count. UNCOUNTABLE: 503. An unknown device's also goes into the budget,
+ *      and the one that spends it is said in the errors box.
+ */
+export async function signIn(req: Request, d: SignInDeps): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!d.env.secret || !d.env.adminPwd || !d.env.roPwd) return { status: 500, body: { error: "auth not configured" } };
+  const ip = clientIp(req);
+  const state = await d.state(ip);
+  if (!state) return { status: 503, body: { error: "unavailable" } };
+  const now = d.now();
+  if (state.lockoutUntil && state.lockoutUntil > now) return { status: 429, body: { error: "locked", lockoutUntil: state.lockoutUntil } };
+
+  let body: { password?: unknown; device?: unknown };
+  try { body = await req.json(); } catch { return { status: 400, body: { error: "bad json" } }; }
+  const pw = (body?.password ?? "").toString();
+  const known = await isKnownDevice(body?.device, d.env.secret, now);
+  if (!known && state.wrongHour >= GLOBAL_WRONG_MAX) {
+    return { status: 429, body: { error: "busy", lockoutUntil: now + BUSY_RETRY_MS } };
+  }
+
+  // Both compares always run: which password a guess was nearer to is not for the clock to say.
+  const isAdmin = constantTimeEqual(pw, d.env.adminPwd), isRo = constantTimeEqual(pw, d.env.roPwd);
+  const role: "admin" | "ro" | null = isAdmin ? "admin" : isRo ? "ro" : null;
+  if (role) {
+    // Successful login — wipe any failed-attempt counter for this IP.
+    d.clear(ip).catch(() => {});
+    // The app's token and, beside it, the site's session for the gate (`site`), of one expiry.
+    const { token, site } = await tokensFor(role, TOKEN_TTL_MS, d.env.secret);
+    return { status: 200, body: { token, site, role, ...(known ? {} : { device: await makeDeviceToken(d.env.secret, now) }) } };
+  }
+
+  // Wrong password → atomic increment via SQL function. Also pause ~500 ms before responding: the throughput of a
+  // guessing run is what slows it, and a real user typing a wrong password notices nothing. `WRONG_PASSWORD_DELAY_MS`
+  // is pinned so a regression to 0 cannot quietly reopen that window.
+  await d.wait(WRONG_PASSWORD_DELAY_MS);
+  const result = await d.bump(ip);
+  if (!result) return { status: 503, body: { error: "unavailable" } };
+  if (!known) {
+    const spent = await d.bumpBudget().catch(() => null);
+    if (spent === GLOBAL_WRONG_MAX) {
+      await d.report("auth.budget", {
+        message: `${spent} wrong passwords in an hour from addresses that have never signed in: sign-in is refused to such addresses until the hour's count falls`,
+      }).catch(() => {});
+    }
+  }
+  if (result.locked_out) {
+    return { status: 429, body: { error: "locked", lockoutUntil: result.lockout_until_out ?? now + LOCKOUT_MS } };
+  }
+  const attempts = result.attempts_out ?? 0;
+  return { status: 401, body: { error: "invalid", attempts, attemptsLeft: Math.max(0, MAX_ATTEMPTS - attempts) } };
+}
 
 // Guarded so tests can import the helpers above without spinning up
 // the server. Supabase's runtime executes index.ts as the entry
@@ -299,55 +440,14 @@ if (import.meta.main) Deno.serve(async (req: Request) => {
     });
     if (vt) return vt;
 
-    if (!SECRET || !ADMIN_PWD || !RO_PWD) {
-      return json(500, { error: "auth not configured" });
-    }
-
-    const ip = clientIp(req);
-
-    // Fast-path lockout check — saves a round-trip to the RPC if the caller
-    // is already locked out. Stale reads are fine; bump_auth_attempt below
-    // is the authoritative writer.
-    const lockedUntil = await getLockout(ip);
-    if (lockedUntil && lockedUntil > Date.now()) {
-      return json(429, { error: "locked", lockoutUntil: lockedUntil });
-    }
-
-    let body: { password?: string };
-    try { body = await req.json(); } catch { return json(400, { error: "bad json" }); }
-    const pw = (body?.password ?? "").toString();
-
-    let role: "admin" | "ro" | null = null;
-    if (pw === ADMIN_PWD) role = "admin";
-    else if (pw === RO_PWD) role = "ro";
-
-    if (role) {
-      // Successful login — wipe any failed-attempt counter for this IP.
-      clearAttempts(ip).catch(() => {});
-      // The app's token and, beside it, the site's session for the gate (`site`), of one expiry.
-      const { token, site } = await tokensFor(role, TOKEN_TTL_MS);
-      return json(200, { token, site, role });
-    }
-
-    // Wrong password → atomic increment via SQL function. The function
-    // handles the threshold check in a single statement so concurrent
-    // wrong-password requests can't race-read the same counter.
-    //
-    // Also pause ~500 ms before responding: with a 4-digit numeric
-    // password (10⁴ keyspace) and IP-rotation defeating the per-IP
-    // lockout, the throughput of a brute-force run is what slows the
-    // attacker. 500 ms × 10000 = ~83 min minimum offline-ish; a real
-    // user typing a wrong password notices nothing. Pin chosen at
-    // 500ms by `WRONG_PASSWORD_DELAY_MS` so the test suite can assert
-    // it stays on (regressions that drop the delay to 0 would silently
-    // restore the brute-force window).
-    await new Promise((r) => setTimeout(r, WRONG_PASSWORD_DELAY_MS));
-    const result = await bumpAttempt(ip, MAX_ATTEMPTS, LOCKOUT_MS);
-    if (result?.locked_out) {
-      return json(429, { error: "locked", lockoutUntil: result.lockout_until_out ?? Date.now() + LOCKOUT_MS });
-    }
-    const attempts = result?.attempts_out ?? 0;
-    return json(401, { error: "invalid", attempts, attemptsLeft: Math.max(0, MAX_ATTEMPTS - attempts) });
+    const out = await signIn(req, {
+      env: { adminPwd: ADMIN_PWD, roPwd: RO_PWD, secret: SECRET },
+      now: () => Date.now(),
+      state: readState, bump: bumpAttempt, bumpBudget, clear: clearAttempts,
+      wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+      report: reportServerError,
+    });
+    return json(out.status, out.body);
   } catch (e) {
     // Unhandled exception — turn it into an ops_errors row so it's
     // visible in the admin badge, then return a generic 500.

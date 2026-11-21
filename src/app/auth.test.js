@@ -182,6 +182,37 @@ describe('authenticate', () => {
     expect(await authenticate('pw')).toEqual({ locked: true, lockUntil: 1234 });
   });
 
+  // The auth function's budget of wrong passwords across addresses (the audit of 2026-11-21, A2).
+  it('a 429 "busy" is the hour\'s budget spent elsewhere, not this address\'s lockout', async () => {
+    const { authenticate } = await import('./auth.js');
+    answer(429, { error: 'busy', lockoutUntil: 5678 });
+    expect(await authenticate('pw')).toEqual({ locked: true, lockUntil: 5678, busy: true });
+  });
+
+  it('sends the device proof it holds with a sign-in, and keeps the one a sign-in answers', async () => {
+    const { authenticate } = await import('./auth.js');
+    const bodies = /** @type {any[]} */ ([]);
+    const stub = (/** @type {object} */ reply) => vi.stubGlobal('fetch', vi.fn(async (/** @type {string} */ _u, /** @type {RequestInit} */ o) => {
+      bodies.push(JSON.parse(String(o?.body)));
+      return new Response(JSON.stringify(reply), { status: 200 });
+    }));
+    const kept = new Map();
+    vi.stubGlobal('localStorage', {
+      getItem: (/** @type {string} */ k) => (kept.has(k) ? kept.get(k) : null),
+      setItem: (/** @type {string} */ k, /** @type {string} */ v) => { kept.set(k, String(v)); },
+      removeItem: (/** @type {string} */ k) => { kept.delete(k); },
+    });
+    stub({ token: 'abc', role: 'admin', device: 'proof.one' });
+    await authenticate('pw');
+    expect(bodies[0]).toEqual({ password: 'pw' });
+    expect(kept.get('dp.device')).toBe('proof.one');
+    // The next sign-in carries it; an answer without a new one leaves it as it is.
+    stub({ token: 'abc', role: 'admin' });
+    await authenticate('pw');
+    expect(bodies[1]).toEqual({ password: 'pw', device: 'proof.one' });
+    expect(kept.get('dp.device')).toBe('proof.one');
+  });
+
   it('a 5xx or no answer at all is the server unavailable, never a wrong password', async () => {
     const { authenticate } = await import('./auth.js');
     answer(500, { error: 'boom' });

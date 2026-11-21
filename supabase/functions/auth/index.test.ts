@@ -21,6 +21,14 @@ import {
   siteKeyResponse,
   tokensFor,
   viewerTokenResponse,
+  signIn,
+  type SignInDeps,
+  type SignInState,
+  makeDeviceToken,
+  isKnownDevice,
+  GLOBAL_WRONG_MAX,
+  BUSY_RETRY_MS,
+  DEVICE_MAX_AGE_MS,
 } from "./index.ts";
 import { verifyToken } from "../data/index.ts";
 
@@ -266,4 +274,137 @@ Deno.test("site-key route: the public key for anyone, by GET, cached a few minut
   const none = await siteKeyResponse(new Request("https://x/auth?action=site-key"), "");
   assertEquals(none?.status, 500);
   await none?.body?.cancel();
+});
+
+// ---- The password form (signIn): the audit of 2026-11-21, A2. Until then the flow lived inside Deno.serve, untested. ----
+
+const SECRET = "test-secret-for-the-password-form";
+const ENVS = { adminPwd: "the-admin-password", roPwd: "the-viewer-password", secret: SECRET };
+type Calls = { state: number; bump: number; budget: number; clear: number; waited: number[]; reports: string[] };
+function signInDeps(o: {
+  state?: SignInState | null; bump?: { attempts_out: number; lockout_until_out: number | null; locked_out: boolean } | null;
+  budgetAfter?: number | null; now?: number;
+} = {}): { d: SignInDeps; calls: Calls } {
+  const calls: Calls = { state: 0, bump: 0, budget: 0, clear: 0, waited: [], reports: [] };
+  const d: SignInDeps = {
+    env: ENVS,
+    now: () => o.now ?? 1_800_000_000_000,
+    state: () => { calls.state++; return Promise.resolve(o.state === undefined ? { lockoutUntil: null, wrongHour: 0 } : o.state); },
+    bump: () => { calls.bump++; return Promise.resolve(o.bump === undefined ? { attempts_out: 1, lockout_until_out: null, locked_out: false } : o.bump); },
+    bumpBudget: () => { calls.budget++; return Promise.resolve(o.budgetAfter === undefined ? 1 : o.budgetAfter); },
+    clear: () => { calls.clear++; return Promise.resolve(); },
+    wait: (ms) => { calls.waited.push(ms); return Promise.resolve(); },
+    report: (kind) => { calls.reports.push(kind); return Promise.resolve(); },
+  };
+  return { d, calls };
+}
+const form = (body: unknown) => new Request("https://x.supabase.co/functions/v1/auth", {
+  method: "POST", headers: { "x-real-ip": "203.0.113.7", "content-type": "application/json" }, body: JSON.stringify(body),
+});
+
+Deno.test("signIn: the right password gives the app's token, the site's and a device proof; the address's count is cleared", async () => {
+  const { d, calls } = signInDeps();
+  const r = await signIn(form({ password: ENVS.adminPwd }), d);
+  assertEquals([r.status, r.body.role], [200, "admin"]);
+  assertEquals((await verifyToken(String(r.body.token), SECRET))?.role, "admin");
+  assert(typeof r.body.site === "string");
+  assertEquals(await isKnownDevice(r.body.device, SECRET, 1_800_000_000_000), true);
+  assertEquals([calls.clear, calls.bump, calls.budget, calls.waited.length], [1, 0, 0, 0]);
+  const ro = await signIn(form({ password: ENVS.roPwd }), signInDeps().d);
+  assertEquals([ro.status, ro.body.role], [200, "ro"]);
+});
+
+Deno.test("signIn: a device that proves it signed in before gets no second proof", async () => {
+  const device = await makeDeviceToken(SECRET, 1_800_000_000_000 - 86400e3);
+  const r = await signIn(form({ password: ENVS.adminPwd, device }), signInDeps().d);
+  assertEquals([r.status, "device" in r.body], [200, false]);
+});
+
+Deno.test("signIn: while the lockout state cannot be read nothing is judged, not even the right password (it failed open until 2026-11-21)", async () => {
+  for (const password of [ENVS.adminPwd, "a wrong one"]) {
+    const { d, calls } = signInDeps({ state: null });
+    const r = await signIn(form({ password }), d);
+    assertEquals([r.status, r.body], [503, { error: "unavailable" }]);
+    assertEquals([calls.bump, calls.budget, calls.clear, calls.waited.length], [0, 0, 0, 0]);
+  }
+});
+
+Deno.test("signIn: a wrong password that cannot be counted is 503, never \"attempt 0 of 3\"", async () => {
+  const { d, calls } = signInDeps({ bump: null });
+  const r = await signIn(form({ password: "a wrong one" }), d);
+  assertEquals([r.status, r.body], [503, { error: "unavailable" }]);
+  assertEquals(calls.waited, [WRONG_PASSWORD_DELAY_MS]);
+});
+
+Deno.test("signIn: a wrong password waits, counts for its address and in the hour's budget, and says what is left", async () => {
+  const { d, calls } = signInDeps({ bump: { attempts_out: 2, lockout_until_out: null, locked_out: false } });
+  const r = await signIn(form({ password: "a wrong one" }), d);
+  assertEquals([r.status, r.body], [401, { error: "invalid", attempts: 2, attemptsLeft: 1 }]);
+  assertEquals([calls.waited, calls.bump, calls.budget, calls.clear], [[WRONG_PASSWORD_DELAY_MS], 1, 1, 0]);
+  // The third locks the address, as before.
+  const locked = await signIn(form({ password: "a wrong one" }), signInDeps({ bump: { attempts_out: 0, lockout_until_out: 1_900_000_000_000, locked_out: true } }).d);
+  assertEquals([locked.status, locked.body], [429, { error: "locked", lockoutUntil: 1_900_000_000_000 }]);
+});
+
+Deno.test("signIn: a locked address is refused before its password is read", async () => {
+  const { d, calls } = signInDeps({ state: { lockoutUntil: 1_800_000_000_000 + 60_000, wrongHour: 0 } });
+  const r = await signIn(form({ password: ENVS.adminPwd }), d);
+  assertEquals([r.status, r.body.error], [429, "locked"]);
+  assertEquals([calls.bump, calls.clear], [0, 0]);
+  // A lockout that has lapsed holds nobody.
+  assertEquals((await signIn(form({ password: ENVS.adminPwd }), signInDeps({ state: { lockoutUntil: 1_800_000_000_000 - 1, wrongHour: 0 } }).d)).status, 200);
+});
+
+Deno.test("signIn: with the hour's budget spent an unknown device is refused unjudged and uncounted, with a time to try again", async () => {
+  const spent = { lockoutUntil: null, wrongHour: GLOBAL_WRONG_MAX };
+  for (const password of [ENVS.adminPwd, "a wrong one"]) {
+    const { d, calls } = signInDeps({ state: spent });
+    const r = await signIn(form({ password }), d);
+    assertEquals([r.status, r.body], [429, { error: "busy", lockoutUntil: 1_800_000_000_000 + BUSY_RETRY_MS }]);
+    assertEquals([calls.bump, calls.budget, calls.clear, calls.waited.length], [0, 0, 0, 0]);
+  }
+  // One under the budget is still judged.
+  assertEquals((await signIn(form({ password: ENVS.adminPwd }), signInDeps({ state: { lockoutUntil: null, wrongHour: GLOBAL_WRONG_MAX - 1 } }).d)).status, 200);
+});
+
+Deno.test("signIn: the budget never holds a device that has signed in before, so guessing from elsewhere cannot lock the owner out", async () => {
+  const device = await makeDeviceToken(SECRET, 1_800_000_000_000 - 86400e3);
+  const spent = { lockoutUntil: null, wrongHour: GLOBAL_WRONG_MAX * 50 };
+  const ok = await signIn(form({ password: ENVS.adminPwd, device }), signInDeps({ state: spent }).d);
+  assertEquals([ok.status, ok.body.role], [200, "admin"]);
+  // Its own wrong password counts for its address and not in the budget.
+  const { d, calls } = signInDeps({ state: spent });
+  const wrong = await signIn(form({ password: "a wrong one", device }), d);
+  assertEquals([wrong.status, calls.bump, calls.budget], [401, 1, 0]);
+});
+
+Deno.test("signIn: the wrong password that spends the budget is said in the errors box, once", async () => {
+  const at = signInDeps({ budgetAfter: GLOBAL_WRONG_MAX });
+  await signIn(form({ password: "a wrong one" }), at.d);
+  assertEquals(at.calls.reports, ["auth.budget"]);
+  for (const n of [GLOBAL_WRONG_MAX - 1, GLOBAL_WRONG_MAX + 1, null]) {
+    const other = signInDeps({ budgetAfter: n });
+    assertEquals((await signIn(form({ password: "a wrong one" }), other.d)).status, 401);
+    assertEquals(other.calls.reports, []);
+  }
+});
+
+Deno.test("isKnownDevice: only a proof this function signed, of the right kind and age", async () => {
+  const now = 1_800_000_000_000;
+  const good = await makeDeviceToken(SECRET, now);
+  assertEquals(await isKnownDevice(good, SECRET, now), true);
+  assertEquals(await isKnownDevice(good, "another-secret", now), false);
+  assertEquals(await isKnownDevice(good, SECRET, now + DEVICE_MAX_AGE_MS + 1), false);
+  assertEquals(await isKnownDevice(await makeDeviceToken(SECRET, now + 3600e3), SECRET, now), false);
+  for (const bad of [undefined, null, 7, "", "a.b", good.slice(0, -2) + "zz", "x".repeat(600)]) assertEquals(await isKnownDevice(bad, SECRET, now), false);
+  // An app token is not a device proof, and a device proof is not an app token.
+  assertEquals(await isKnownDevice(await makeToken("admin", SECRET), SECRET, now), false);
+  assertEquals(await verifyToken(good, SECRET), null);
+});
+
+Deno.test("signIn: unconfigured, or a body that is not JSON", async () => {
+  const { d } = signInDeps();
+  assertEquals((await signIn(form({ password: "x" }), { ...d, env: { ...ENVS, secret: "" } })).status, 500);
+  const raw = new Request("https://x.supabase.co/functions/v1/auth", { method: "POST", body: "not json" });
+  assertEquals((await signIn(raw, d)).status, 400);
 });

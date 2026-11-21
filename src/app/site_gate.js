@@ -145,20 +145,26 @@ function loginScript(/** @type {GateConfig} */ c) {
   const AUTH = ${JSON.stringify(c.authUrl)}, ANON = ${JSON.stringify(c.anon)};
   const form = document.getElementById('f'), pw = document.getElementById('pw'), btn = document.getElementById('go'), msg = document.getElementById('m');
   const say = (t, k) => { msg.textContent = t; msg.className = k || ''; };
+  const device = () => { try { return localStorage.getItem('dp.device') || undefined; } catch { return undefined; } };
   async function signIn(p) {
     btn.disabled = true; say('Signing in…');
     let res;
     try {
-      res = await fetch(AUTH, { method: 'POST', headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: p }), signal: AbortSignal.timeout(10000) });
+      res = await fetch(AUTH, { method: 'POST', headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: p, device: device() }), signal: AbortSignal.timeout(10000) });
     } catch { btn.disabled = false; return say('The server did not answer, so the password was not checked. Try again in a minute.', 'warn'); }
     const body = await res.json().catch(() => ({}));
     if (res.ok && body.token && body.site) {
       try { sessionStorage.setItem('dp.token', body.token); } catch {}
+      if (body.device) { try { localStorage.setItem('dp.device', body.device); } catch {} }
       const s = await fetch(${JSON.stringify(SESSION_PATH)}, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: body.site }).catch(() => null);
       if (s && s.ok) { location.replace(location.pathname + location.search + location.hash); return; }
       btn.disabled = false; return say('Signed in, but the site refused the session. Try again.', 'warn');
     }
     btn.disabled = false;
+    if (res.status === 429 && body.error === 'busy') {
+      const m = Math.max(1, Math.ceil(((Number(body.lockoutUntil) || Date.now() + 9e5) - Date.now()) / 6e4));
+      return say('Too many wrong passwords from elsewhere this hour, so yours was not checked. Try again in ' + m + ' min.', 'warn');
+    }
     if (res.status === 429) {
       const h = Math.max(1, Math.ceil(((Number(body.lockoutUntil) || Date.now() + 864e5) - Date.now()) / 36e5));
       return say('Too many incorrect attempts. Try again in ' + h + 'h.', 'bad');
