@@ -11,7 +11,7 @@
 //   POST /functions/v1/data?action=save  body=portfolio
 //   GET  /functions/v1/data?action=price-snapshots&since=<ms>&bucket=<sec>
 //                                                  → { rows: [{ts, prices}] }
-//        (admin role required; read-only tokens are 403'd here)
+//        (either role; a read-only token gets the board's own tickers, and each sold-out holding under its alias)
 //
 // REQUIRED secret: APP_AUTH_SECRET (same value as in `auth/index.ts`).
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are auto-injected by the
