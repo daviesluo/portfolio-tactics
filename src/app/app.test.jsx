@@ -764,7 +764,9 @@ describe('App — the Trading 212 history walk', () => {
   // out in full comes off only once its sale is among the stored fills, and the page used to wait for the walk's next
   // step for them. A slice newly held for want of its fill now asks for the history at once, and once only.
   it('reads the history at once when a sold-out slice waits for its fill, and only once for the same slice', async () => {
-    vi.useFakeTimers();
+    // A weekday, pinned: from Friday 20:00 ET to Sunday 20:00 ET the page refreshes every 5 minutes, not every 30 s, so the
+    // three ticks below never came and this test failed every weekend (first seen Saturday 2026-11-21).
+    vi.useFakeTimers({ now: new Date('2026-10-06T22:30:00Z') });
     const t0 = Date.now();
     visibility = 'visible';
     setAdminToken();
@@ -790,7 +792,7 @@ describe('App — the Trading 212 history walk', () => {
   }, 60000);
 
   it('does not read the history for a slice held because the answer missed an account', async () => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ now: new Date('2026-10-06T22:30:00Z') });  // a weekday, pinned, as the test above
     visibility = 'visible';
     setAdminToken();
     vi.mocked(syncTrading212History).mockClear();
