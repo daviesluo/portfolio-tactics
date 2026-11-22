@@ -116,7 +116,7 @@ recorded when nobody has the page open.
 |---|---|
 | Client | React 19 and Vite. Plain JSX, type-checked by `tsc`. Four runtime dependencies. Charts are hand-written SVG. |
 | Server | Supabase Edge Functions on Deno. Every key lives here; the browser only holds a short-lived signed token. |
-| Data | Postgres. CI applies the migrations. |
+| Data | Postgres. CI applies the migrations. A copy goes to Google Drive twice a week, outside Supabase's own seven days of backups. |
 | Scheduling | `pg_cron` calls the recorders through `pg_net`. |
 | Hosting | Cloudflare Pages serves the built bundle. |
 | CI/CD | GitHub Actions: gates on every push, Edge Functions deployed when they change, migrations applied when they reach `main`. |
