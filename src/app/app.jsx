@@ -1,5 +1,5 @@
 // Main portfolio tactics board app
-import { announceBoardRefresh } from './refresh_bus.js';
+import { announceBoardRefresh, onBoardRefresh } from './refresh_bus.js';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { fmtMoney, fmtPct, fmtPrice, pctColor } from './formatters.js';
 import { fxToUSD } from '../portfolio/fx.js';
@@ -620,6 +620,16 @@ function Board({ isReadOnly, agents = false }) {
   }, [agents, isReadOnly]);
   // A viewer on a browser the admin used: the Agents page's kept copy goes (storage.js dropAgentsCache).
   useEffect(() => { if (!agents) Storage.dropAgentsCache(); }, [agents]);
+  // The admin's: the Agents page's data kept current while the page is shut, so a site resumed or reloaded opens it on what
+  // it held a minute before it was left, not on the first load's copy (agents.js keepAgentsWarm; Davies, 2026-11-22).
+  useEffect(() => {
+    if (!agents) return undefined;
+    let gone = false;
+    /** @type {(() => void) | null} */
+    let stop = null;
+    import('../agents/agents.js').then((m) => { if (!gone) stop = m.keepAgentsWarm({ onBoard: onBoardRefresh }); }).catch(() => {});
+    return () => { gone = true; stop?.(); };
+  }, [agents]);
 
   // In read-only mode or history mode, force-disable edit mode.
   useEffect(() => { if (isReadOnly && editMode) setEditMode(false); }, [isReadOnly, editMode]);

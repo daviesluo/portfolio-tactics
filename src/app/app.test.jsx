@@ -91,7 +91,7 @@ vi.mock('../portfolio/portfolio_remote.js', () => ({
 }));
 vi.mock('../prices/prefetch.js', () => ({ prefetchAllChartData: vi.fn() }));
 // The Agents page's two modules: what the board warms and opens, counted (the role tests below).
-vi.mock('../agents/agents.js', () => ({ prefetchAgentsDashboard: vi.fn(() => Promise.resolve()) }));
+vi.mock('../agents/agents.js', () => ({ prefetchAgentsDashboard: vi.fn(() => Promise.resolve()), keepAgentsWarm: vi.fn(() => () => {}) }));
 vi.mock('../agents/agents.jsx', () => ({ AgentsModal: () => <div data-testid="agents-modal" /> }));
 // Force the overnight window so doRefresh exercises the overnight
 // preload path; keep every other market-hours helper real.
@@ -130,7 +130,7 @@ import { fetchOvernightSeries } from '../prices/overnight_intraday.js';
 import { fetchHistoricalBatch, fetchTodayRegularClose } from '../prices/historical.js';
 import { fetchTrading212Dividends, syncTrading212History, applyTrading212Answer } from '../portfolio/trading212.js';
 import { loadPortfolioRemote, savePortfolioRemote, portfolioUserFingerprint, knownPortfolioVersion } from '../portfolio/portfolio_remote.js';
-import { prefetchAgentsDashboard } from '../agents/agents.js';
+import { prefetchAgentsDashboard, keepAgentsWarm } from '../agents/agents.js';
 
 beforeEach(() => {
   cleanup();
@@ -190,6 +190,7 @@ describe('App — the Agents page by role', () => {
     await act(async () => { header().onOpenAgents(); });
     expect(queryByTestId('agents-modal')).toBeNull();
     expect(prefetchAgentsDashboard).not.toHaveBeenCalled();
+    expect(keepAgentsWarm).not.toHaveBeenCalled();
     expect(agentsCalls()).toEqual([]);
     expect(localStorage.getItem('dp.agentsCache')).toBeNull();
   });
@@ -206,6 +207,9 @@ describe('App — the Agents page by role', () => {
       await waitFor(() => expect(header()?.agents).toBe(true));
       expect(header().isReadOnly).toBe(role !== 'admin');
       await waitFor(() => expect(prefetchAgentsDashboard).toHaveBeenCalledTimes(1));
+      // And keeps it current while the page is shut, on the board's refreshes (agents.js keepAgentsWarm).
+      await waitFor(() => expect(keepAgentsWarm).toHaveBeenCalledTimes(1));
+      expect(typeof vi.mocked(keepAgentsWarm).mock.calls[0][0]?.onBoard).toBe('function');
       await act(async () => { header().onOpenAgents(); });
       expect(await findByTestId('agents-modal')).toBeTruthy();
     }
