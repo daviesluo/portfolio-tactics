@@ -50,6 +50,15 @@ export function strategyMoney(h, fx) {
   return { valueUsd: Number(h.shares) * Number(h.lastPrice) * fx, deployedUsd: null, deployedPct: null };
 }
 
+/**
+ * The price a holding's 1D % is measured from in the ticker modal. Never called here, as no holding is one; its previous close.
+ * @param {{ prevClose?: number } | null | undefined} h @returns {number | null}
+ */
+export function strategyDayAnchor(h) {
+  const p = Number(h?.prevClose);
+  return Number.isFinite(p) && p > 0 ? p : null;
+}
+
 /** The holdings now: none, and nothing is asked of any server. @param {typeof fetch} [_fetchImpl] @returns {Promise<any[]>} */
 export async function fetchBoardStrategies(_fetchImpl) {
   return [];

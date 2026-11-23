@@ -85,11 +85,12 @@ export const computeMetrics = (portfolio, opts = {}) => {
   const countedTickers = new Set();
   const positionsOut = {};
   // The day percents' bases, beside `prevMV`: the same for every holding but the board's strategies (a private slot, B and C), whose
-  // percent is on the money they had when the UTC day began, today's deposits left out (the server's `strategyHolding` dayPct,
-  // _shared/board_strategies.ts `todayBaseOf`, the Agents page's own base). Their day change stays TODAY, so their base is that
-  // change over that percent; without a percent (a day with no change) it is the day's start value as before. Until 2026-11-20
-  // the slot's and the board's percents were on `prevMV`, which counts a deposit made today: Quotes C's tile read +1.40 % beside
-  // the Agents card's +1.90 %.
+  // percent is the day's time-weighted return, split at today's deposits (the server's `strategyHolding` dayPct,
+  // _shared/board_strategies.ts `dayReturnOf`, the Agents page's own rule). Their day change stays TODAY, so their base is that
+  // change over that percent (a positive one; without a percent, a day with no change, the day's start value as before), and the
+  // slot's card and the board's DAY CHANGE % weigh each strategy by the money that made its day. Until 2026-11-20 the slot's and
+  // the board's percents were on `prevMV`, which counts a deposit made today: Quotes C's tile read +1.40 % beside the Agents card's
+  // +1.90 %.
   let pctBaseAll = 0;
   for (const [posKey, pos] of Object.entries(portfolio.positions)) {
     let posMV = 0, posPrev = 0, posCost = 0, posInvested = 0, posPctBase = 0;
@@ -211,7 +212,7 @@ export const computeMetrics = (portfolio, opts = {}) => {
       const prevMV = isCash ? mv : h.shares * baselinePrice * fx;
       const costUSD = isCash ? mv : h.shares * h.cost * fx;
       const dayDeltaUSD = mv - prevMV;
-      const pctBase = h.strategy && !extActive && !sessionSuppress && Number.isFinite(pct) && pct !== 0 && dayDeltaUSD !== 0
+      const pctBase = h.strategy && !extActive && !sessionSuppress && Number.isFinite(pct) && pct !== 0 && dayDeltaUSD / (pct / 100) > 0
         ? dayDeltaUSD / (pct / 100)
         : prevMV;
       posPctBase += pctBase;

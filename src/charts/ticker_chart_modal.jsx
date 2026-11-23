@@ -7,7 +7,7 @@ import React from 'react';
 import { Modal } from '../board/modals.jsx';
 import { usMarketHoursUtc, isWeekendDeadZone, isUsMarketHoliday, isUsTradingDateStr, foreignSessionIsOpen } from '../prices/market_hours.js';
 import { fxToUSD, fxRateToUSD } from '../portfolio/fx.js';
-import { strategyMoney } from '../portfolio/board_strategies.js';
+import { strategyMoney, strategyDayAnchor } from '../portfolio/board_strategies.js';
 import { fmtPrice as fmtPr, fmtPct as fmP, fmtMoney as fmtMo, fmtSharesFor as fmtShFor, pctColor as pcC, maskDigits, fmtDayMonth } from '../app/formatters.js';
 import { RANGES, MODAL_RANGE_KEYS, modalRangeKey, windowSinceLastUsClose, windowBetweenLastTwoUsCloses, filterToLast24h, fillVenueSessionGrid, resampleToSlots } from './ytd.js';
 import { isCnFund as isCnFundT, isPvt as isPvtT, isDailyOnly as isDailyOnlyT, isStrategyHolding, hasOvernightSession, isRegularSessionOnly, isCrypto, venueSessionFor, tradingWeekOf } from '../prices/ticker_class.js';
@@ -320,7 +320,9 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
   // function can be unit-pinned and PR-#157-style 8-place fixes
   // collapse to one.
   const lastPriceAny = md?.lastPrice ?? holding?.lastPrice ?? null;
-  const prevCloseAny = md?.prevClose ?? holding?.prevClose ?? null;
+  // A private-module holding's 1D is measured from its day's anchor (`strategyDayAnchor`): its percent is the tile's, whatever the
+  // extended-hours switch (it has no session, so `anchorAtPrevClose` below holds it there with the switch on).
+  const prevCloseAny = holding?.strategy ? strategyDayAnchor(holding) : (md?.prevClose ?? holding?.prevClose ?? null);
 
   // Display series: substitute live price into the last point so the
   // chart tail tracks the rest of the app in real time. `isPriceAxis`
@@ -510,7 +512,7 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
       // running quote, so the ext-on close anchor would read 0.00 %;
       // anchor at prevClose instead, which is the same basis
       // computeMetrics uses for that row on the board.
-      anchorAtPrevClose: foreignSessionIsOpen(ticker),
+      anchorAtPrevClose: foreignSessionIsOpen(ticker) || !!holding?.strategy,
       pe3yAvg,
       ps3yAvg,
       maSeries,
