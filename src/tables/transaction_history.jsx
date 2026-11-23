@@ -230,7 +230,10 @@ function TransactionHistoryModal({ holdings, marketData, hideValues, t212Orders 
                     </td>
                     <td className="hl-left txn-date" data-col="date">{r.date}</td>
                     <td className="hl-left txn-sym" data-col="symbol">
-                      {onTickerClick && holdings?.[r.ticker]
+                      {/* Any market's ticker opens its chart, a position sold out included, with or without a row on the
+                          board (Davies, 2026-11-23: "已经清仓的ticker里点进去看价格不对": its page asks for its own quote); cash and
+                          a private holding have no chart. */}
+                      {onTickerClick && r.ticker && !holdings?.[r.ticker]?.isCash && !String(r.ticker).endsWith('.PVT')
                         ? (
                           <button className="txn-sym-btn" onClick={() => onTickerClick(r.ticker)}>
                             {r.ticker}
