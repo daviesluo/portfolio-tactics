@@ -132,12 +132,28 @@ function releaseBodyLock() {
   window.scrollTo(0, savedScrollY);
 }
 
+/**
+ * The modals open, oldest first. Escape closes the newest alone: a ticker's page opened from a list closes back onto the list
+ * (Davies, 2026-11-23: "Transaction history里的ticker点进去后再退出应该是Transaction history页而不是主页"), where every open modal
+ * used to close at once. A modal joins when it mounts and leaves when it unmounts, so a re-render never reorders it.
+ * @type {object[]}
+ */
+const escapeStack = [];
+
 function Modal({ children, onClose, size = "md" }) {
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
   React.useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const me = {};
+    escapeStack.push(me);
+    const onKey = (/** @type {KeyboardEvent} */ e) => { if (e.key === "Escape" && escapeStack[escapeStack.length - 1] === me) closeRef.current(); };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      const i = escapeStack.indexOf(me);
+      if (i >= 0) escapeStack.splice(i, 1);
+    };
+  }, []);
 
   // Lock body scroll while any modal is mounted so iOS Safari's bouncy
   // overscroll can't drag the underlying page. See acquireBodyLock.
