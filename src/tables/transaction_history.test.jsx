@@ -239,10 +239,16 @@ describe('closed positions and the clickable symbol', () => {
     expect(onTickerClick).toHaveBeenCalledWith('NVDA');
   });
 
-  it('leaves a closed ticker as plain text — its chart has no holding', () => {
+  // Until 2026-11-23 a ticker with no board row stayed plain text, its chart having no holding to read. Its page now asks
+  // for its own quote (app/view_quote.js; Davies, 2026-11-23: "已经清仓的ticker里点进去看价格不对"), so a position sold out
+  // opens its chart too; cash and a private holding, which have no chart, stay text.
+  it('opens the chart for a closed ticker with no board row too', async () => {
+    const user = userEvent.setup();
+    const onTickerClick = vi.fn();
     render(<TransactionHistoryModal holdings={HOLDINGS} marketData={MARKET} hideValues={false}
-             t212Orders={FILLS} onTickerClick={vi.fn()} onClose={vi.fn()} />);
-    expect(screen.queryByRole('button', { name: 'AMGN' })).not.toBeInTheDocument();
+             t212Orders={FILLS} onTickerClick={onTickerClick} onClose={vi.fn()} />);
+    await user.click(screen.getAllByRole('button', { name: 'AMGN' })[0]);
+    expect(onTickerClick).toHaveBeenCalledWith('AMGN');
   });
 });
 
