@@ -10,6 +10,7 @@ import { freezeDepositFxRates } from '../charts/deposit_series.js';
 import { createPortfolioEditHandlers } from '../portfolio/portfolio_edits.js';
 import { computeMetrics, detectFormation, fxPendingOf } from '../portfolio/metrics.js';
 import { refreshPrices, fetchTickers } from '../prices/yahoo_fetch.js';
+import { needsViewQuote, withViewQuote } from './view_quote.js';
 import { createQuoteGuard, holdMessage } from '../prices/quote_band.js';
 import { loadRangeCache } from '../prices/cache.js';
 import { fetchTodayRegularClose, fetchHistoricalBatch } from '../prices/historical.js';
@@ -544,6 +545,9 @@ function Board({ isReadOnly, agents = false }) {
     });
   }, [t212Orders, portfolio?.holdings, dividendEvents]);
   const [viewingTicker, setViewingTicker] = useState(/** @type {string | null} */ (null));
+  // The ticker modal's own quote for a ticker the board does not quote, a holding sold out (view_quote.js): asked for each time the
+  // modal opens on one, so it is never older than the open.
+  const [viewQuote, setViewQuote] = useState(/** @type {{ ticker: string, quote: any } | null} */ (null));
   const [showHoldingsList, setShowHoldingsList] = useState(false);
   const [showSectorsList, setShowSectorsList] = useState(false);
   const [showTargetPrice, setShowTargetPrice] = useState(false);
@@ -597,6 +601,17 @@ function Board({ isReadOnly, agents = false }) {
   // flashes "FX MISSING N tickers" for ~500 ms before the first
   // fetch fills marketData and the pill unmounts.
   const [marketDataReady, setMarketDataReady] = useState(false);
+  // A ticker the board does not quote (a holding sold out) gets its quote when its modal opens (view_quote.js). Keyed on the ticker
+  // alone: a later board refresh never quotes it, and the modal's own quote is asked for again at the next open.
+  useEffect(() => {
+    setViewQuote(null);
+    const t = viewingTicker;
+    if (!t || !needsViewQuote(t, shownPortfolio?.holdings?.[t], marketData)) return undefined;
+    let live = true;
+    fetchTickers([t]).then((out) => { if (live && out?.[t]) setViewQuote({ ticker: t, quote: out[t] }); }).catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingTicker]);
   const [viewMode, setViewMode] = useState('tactics');
 
   // "Hide values" toggle — replaces dollar amounts with bullets so the
@@ -1961,7 +1976,9 @@ function Board({ isReadOnly, agents = false }) {
               t212Orders={t212Orders}
               dividends={dividendEvents.byTicker}
               realizedPending={costsPending || !t212OrdersRead}
-              onTickerClick={(t) => { setShowTransactionHistory(false); setViewingTicker(t); }}
+              // The list stays open under the ticker modal, so closing it comes back here, as from the other lists (Davies,
+              // 2026-11-23: "Transaction history里的ticker点进去后再退出应该是Transaction history页而不是主页").
+              onTickerClick={(t) => setViewingTicker(t)}
               onClose={() => setShowTransactionHistory(false)}
             />
           </React.Suspense>
@@ -1985,7 +2002,7 @@ function Board({ isReadOnly, agents = false }) {
             <TickerChartModal
               ticker={viewingTicker}
               holding={shownPortfolio.holdings[viewingTicker] ?? null}
-              marketData={marketData}
+              marketData={viewQuote?.ticker === viewingTicker ? withViewQuote(marketData, viewingTicker, viewQuote.quote) : marketData}
               extendedHours={extendedHours}
               phase={currentPhase}
               portfolioTotalValue={metrics.marketValue}

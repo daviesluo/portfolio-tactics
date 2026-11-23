@@ -4,6 +4,7 @@
 // portfolio chart (1D / 1W / 1M / 3M / 6M / 1Y). Used when the user taps a
 // player in non-edit mode — edit mode keeps opening the EditTickerModal.
 import React from 'react';
+import { soldOut } from '../app/view_quote.js';
 import { Modal } from '../board/modals.jsx';
 import { usMarketHoursUtc, isWeekendDeadZone, isUsMarketHoliday, isUsTradingDateStr, foreignSessionIsOpen } from '../prices/market_hours.js';
 import { fxToUSD, fxRateToUSD } from '../portfolio/fx.js';
@@ -206,8 +207,12 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
   // AH bars). If not, the ticker has no real AH and we ignore
   // `extPrice`, falling back to `lastPrice` (= last real trade).
   const md = marketData?.[ticker];
-  const extPriceLive  = md?.extPrice  ?? holding?.extPrice  ?? null;
-  const lastPriceLive = md?.lastPrice ?? holding?.lastPrice ?? null;
+  // A holding sold out has no quote on the board: its stored prices are its last quote's (its sale), never today's (Davies,
+  // 2026-11-23: "已经清仓的ticker里点进去看价格不对"). The app asks for its quote when the modal opens (app/view_quote.js); until
+  // then the chart's own last close stands, never the stored price drawn as the live point.
+  const quoted = soldOut(holding) ? null : holding;
+  const extPriceLive  = md?.extPrice  ?? quoted?.extPrice  ?? null;
+  const lastPriceLive = md?.lastPrice ?? quoted?.lastPrice ?? null;
   const openMinsUtc   = mh.openHh  * 60 + mh.openMm;
   const closeMinsUtc  = mh.closeHh * 60 + mh.closeMm;
   // hasExtendedBars — "is `extPrice` a real AH quote for this
@@ -319,10 +324,10 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
   // needs anchor + hasData + scale derived together so the pure
   // function can be unit-pinned and PR-#157-style 8-place fixes
   // collapse to one.
-  const lastPriceAny = md?.lastPrice ?? holding?.lastPrice ?? null;
+  const lastPriceAny = md?.lastPrice ?? quoted?.lastPrice ?? null;
   // A private-module holding's 1D is measured from its day's anchor (`strategyDayAnchor`): its percent is the tile's, whatever the
   // extended-hours switch (it has no session, so `anchorAtPrevClose` below holds it there with the switch on).
-  const prevCloseAny = holding?.strategy ? strategyDayAnchor(holding) : (md?.prevClose ?? holding?.prevClose ?? null);
+  const prevCloseAny = holding?.strategy ? strategyDayAnchor(holding) : (md?.prevClose ?? quoted?.prevClose ?? null);
 
   // Display series: substitute live price into the last point so the
   // chart tail tracks the rest of the app in real time. `isPriceAxis`
