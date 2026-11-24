@@ -28,22 +28,22 @@ describe('Storage.migrate', () => {
     expect(localStorage.getItem('auth_lockout_until')).toBeNull();
     expect(localStorage.getItem('auth_attempts')).toBeNull();
     expect(localStorage.getItem('ytd-perf-cache-v12')).toBeNull();
-    expect(localStorage.getItem('dp.schema')).toBe('3');
+    expect(localStorage.getItem('dp.schema')).toBe('4');
 
     // Second run is a no-op (and must not throw).
     Storage.migrate();
-    expect(localStorage.getItem('dp.schema')).toBe('3');
+    expect(localStorage.getItem('dp.schema')).toBe('4');
   });
 
   it('treats a missing schema key as version 0 and migrates', () => {
     localStorage.setItem('ytd-perf-cache-v1', '[]');
     Storage.migrate();
     expect(localStorage.getItem('ytd-perf-cache-v1')).toBeNull();
-    expect(localStorage.getItem('dp.schema')).toBe('3');
+    expect(localStorage.getItem('dp.schema')).toBe('4');
   });
 
   it('no-ops (early return) when already at the current version', () => {
-    localStorage.setItem('dp.schema', '3');
+    localStorage.setItem('dp.schema', '4');
     // A stray legacy key wouldn't normally survive to v1, but it lets us
     // prove the migration body is skipped rather than re-run.
     localStorage.setItem('auth_token', 'keep');
@@ -72,7 +72,7 @@ describe('Storage.migrate', () => {
       expect(deleteDatabase).toHaveBeenCalledTimes(1);
       expect(deleteDatabase).toHaveBeenCalledWith('daviesportfolios');
       expect(localStorage.getItem('auth_token')).toBe('keep');
-      expect(localStorage.getItem('dp.schema')).toBe('3');
+      expect(localStorage.getItem('dp.schema')).toBe('4');
       Storage.migrate();
       expect(deleteDatabase).toHaveBeenCalledTimes(1);
     });
@@ -103,7 +103,7 @@ describe('Storage.migrate v2 -> v3: GOOG became GOOGL (migration 0135, 2026-10-2
     expect(p.holdings.GOOGL).toEqual(goog);
     expect(p.positions.CM.tickers).toEqual(['NVDA', 'GOOGL', 'META']);
     expect(p.positions.GK.tickers).toEqual(['CASH']);
-    expect(localStorage.getItem('dp.schema')).toBe('3');
+    expect(localStorage.getItem('dp.schema')).toBe('4');
   });
 
   it("renames this tab's unsaved draft and the cached dividends of the class A line, and nothing else", () => {
@@ -421,5 +421,36 @@ describe('Storage Agents page (dp.agentsCache)', () => {
     expect(Storage.loadAgentsCache()).toBeNull();
     localStorage.setItem('dp.agentsCache', JSON.stringify({ ts: Date.now(), data: { at: 1, dash, charts: { bad: null, ok: { at: 2, chart } } } }));
     expect(Object.keys(Storage.loadAgentsCache()?.charts || {})).toEqual(['ok']);
+  });
+});
+
+// Davies, 2026-11-24: "每次新进入网页后打开agents页都显示很早之前的一个内容，而不是上一次关闭页面时的内容". The dashboard outgrew the kept
+// copy's 600,000 characters; each refused write left the last copy that had fitted, and every visit opened on it.
+describe('the Agents page\'s kept copy never stays behind a newer page', () => {
+  it('a copy too big to keep takes the older one away (it had stayed, and every visit opened on it)', () => {
+    localStorage.clear();
+    expect(Storage.saveAgentsCache({ at: 1, dash: { at: 'old', x: 'small' } })).toBe(true);
+    expect(Storage.loadAgentsCache()?.dash.at).toBe('old');
+    expect(Storage.saveAgentsCache({ at: 2, dash: { at: 'new', x: 'y'.repeat(700_000) } })).toBe(false);
+    expect(localStorage.getItem('dp.agentsCache')).toBeNull();
+    expect(Storage.loadAgentsCache()).toBeNull();
+  });
+
+  it('a write the browser refuses (its quota) takes the older one away too', () => {
+    localStorage.clear();
+    Storage.saveAgentsCache({ at: 1, dash: { at: 'old' } });
+    const spy = vi.spyOn(Object.getPrototypeOf(localStorage), 'setItem').mockImplementation(() => { throw new DOMException('full', 'QuotaExceededError'); });
+    expect(Storage.saveAgentsCache({ at: 2, dash: { at: 'new' } })).toBe(false);
+    spy.mockRestore();
+    expect(Storage.loadAgentsCache()).toBeNull();
+  });
+
+  it('v3 -> v4 drops the copy a browser kept before: it is the last one that fitted, days old', () => {
+    localStorage.clear();
+    localStorage.setItem('dp.schema', '3');
+    Storage.saveAgentsCache({ at: 1, dash: { at: 'old' } });
+    localStorage.setItem('dp.prefs', JSON.stringify({ hideValues: true }));
+    Storage.migrate();
+    expect([localStorage.getItem('dp.agentsCache'), localStorage.getItem('dp.schema'), Storage.loadPrefs().hideValues]).toEqual([null, '4', true]);
   });
 });

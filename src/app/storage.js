@@ -88,7 +88,7 @@ const STORAGE_KEYS = {
   // the legacy-localStorage migration so these names are referenced
   // there, not here.
 };
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
 // app.jsx's per-tab pending-save draft (`PENDING_SAVE_KEY` there), which the v3 step renames too.
 const PENDING_SAVE_KEY = 'dp.pendingSave';
 // The IndexedDB database the chart caches used until schema v2. Only one
@@ -202,7 +202,13 @@ function migrateStorage() {
     // left as it is (portfolio/ticker_rename.js).
     migrateTickerRenames();
   }
-  // Future migrations: if (stored < 4) { ... }
+  if (stored < 4) {
+    // v3 → v4: the Agents page's kept copy is dropped once (Davies, 2026-11-24: "每次新进入网页后打开agents页都显示很早之前的一个
+    // 内容"). The dashboard had outgrown it, so the copy here is the last one that fitted, days old; the page keeps a copy that
+    // size in IndexedDB now (agents/agents_keep.js), and the next answer writes it.
+    localStorage.removeItem(STORAGE_KEYS.agentsCache);
+  }
+  // Future migrations: if (stored < 5) { ... }
 
   localStorage.setItem(STORAGE_KEYS.schemaVersion, String(CURRENT_SCHEMA_VERSION));
 }
@@ -446,7 +452,11 @@ export const Storage = {
   /**
    * Keep the page as it drew, within AGENTS_CACHE_MAX_CHARS: the charts go
    * first, then the whole copy — a copy too big to keep is not worth a
-   * quota error on every refresh.
+   * quota error on every refresh. A copy not kept takes the one before it
+   * away (Davies, 2026-11-24: "每次新进入网页后打开agents页都显示很早之前的一个
+   * 内容"): a refused write had left the last copy that fitted, and every
+   * visit opened on it. The caller keeps a copy too big here elsewhere
+   * (agents/agents_keep.js).
    * @param {{ at: number, dash: any, charts?: Record<string, { at: number, chart: any }> }} copy
    */
   saveAgentsCache: (copy) => {
@@ -454,16 +464,21 @@ export const Storage = {
     try {
       let json = JSON.stringify({ ts: Date.now(), data: copy });
       if (json.length > AGENTS_CACHE_MAX_CHARS) json = JSON.stringify({ ts: Date.now(), data: { ...copy, charts: {} } });
-      if (json.length > AGENTS_CACHE_MAX_CHARS) return false;
-      localStorage.setItem(STORAGE_KEYS.agentsCache, json);
-      return true;
-    } catch {
-      return false;
-    }
+      if (json.length <= AGENTS_CACHE_MAX_CHARS) {
+        localStorage.setItem(STORAGE_KEYS.agentsCache, json);
+        return true;
+      }
+    } catch { /* over the quota: dropped below */ }
+    try { localStorage.removeItem(STORAGE_KEYS.agentsCache); } catch { /* storage refused */ }
+    return false;
   },
   // A read-only viewer's board drops the Agents page's kept copy (Davies, 2026-11-05): a browser the admin used holds
   // the dashboard, and the page is not the viewer's to read.
-  dropAgentsCache: () => { try { localStorage.removeItem(STORAGE_KEYS.agentsCache); } catch { /* storage refused */ } },
+  // Its large copy too (agents/agents_keep.js's database), named here so the viewer's bundle holds none of the page's code.
+  dropAgentsCache: () => {
+    try { localStorage.removeItem(STORAGE_KEYS.agentsCache); } catch { /* storage refused */ }
+    try { if (typeof indexedDB !== 'undefined') indexedDB.deleteDatabase('dp-agents-keep'); } catch { /* storage refused */ }
+  },
   // The Target price page's kept copy (see STORAGE_KEYS.targetsCache), or null: a week at most, as the board's own.
   /** @returns {{ at: number, data: any } | null} */
   loadTargetsCache: () => {
