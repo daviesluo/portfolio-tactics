@@ -78,6 +78,10 @@ const STORAGE_KEYS = {
   // The analyst targets the Target price page last read (tables/targets_data.js), so its first open after a reload
   // paints them at once. A key no earlier version wrote: no schema step.
   targetsCache:  'dp.targetsCache', // { ts, data: { at, data: { slot, asOf, rows } } }
+  // The Agents page's TESTING sections this browser has open (agents.jsx `TestingList`, Davies, 2026-11-24: all closed until a
+  // viewer opens one). A per-viewer convenience: missing, unreadable or refused reads as none open. A key no earlier version
+  // wrote: no schema step.
+  testingGroups: 'dp.testingGroups', // string[] of section keys (testing_list.js `TESTING_SECTIONS`)
   // Timestamp (ms epoch) of the newest ops-error the admin has
   // acknowledged via the error-triage badge — the badge stays hidden
   // until a newer error is reported. Admin-only single scalar; no
@@ -232,6 +236,10 @@ export const Storage = {
   loadDevice: () => { try { return localStorage.getItem(STORAGE_KEYS.device) || ''; } catch { return ''; } },
   /** @param {unknown} t */
   saveDevice: (t) => { if (typeof t !== 'string' || !t) return; try { localStorage.setItem(STORAGE_KEYS.device, t); } catch { /* storage refused */ } },
+  /** The TESTING sections this browser has open, or none. @returns {string[]} */
+  loadTestingGroups: () => { const v = readJSON(STORAGE_KEYS.testingGroups, []); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; },
+  /** @param {string[]} keys */
+  saveTestingGroups: (keys) => writeJSON(STORAGE_KEYS.testingGroups, keys),
   loadPrefs: () => readJSON(STORAGE_KEYS.prefs, { hideValues: false }),
   savePrefs: (p) => writeJSON(STORAGE_KEYS.prefs, p),
   // Newest acknowledged ops-error timestamp (ms epoch); 0 when the
