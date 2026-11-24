@@ -25,4 +25,20 @@ describe('the ticker modal\'s own quote', () => {
     expect(soldOut({ shares: 0 })).toBe(false);
     expect(soldOut(null)).toBe(false);
   });
+
+  it('never for a holding the board quotes: the board\'s quote, its overnight price laid over it, is the modal\'s (2026-11-24, MSTR)', () => {
+    // MSTR held, extended hours on overnight: the board's quote has Monday's close as lastPrice and Trading 212's overnight price as
+    // extPrice (made-up: 100.00 and 97.63, -2.37 %); Yahoo's own quote for it still carries the after-hours close (100.58, +0.58 %).
+    const held = { shares: 10, cost: 90, lastPrice: 100, extPrice: 97.63, extPriceTrusted: true };
+    expect(needsViewQuote('MSTR', held, {})).toBe(false);
+    const yahoo = { lastPrice: 100, extPrice: 100.58, prevClose: 95 };
+    const md = needsViewQuote('MSTR', held, {}) ? withViewQuote({}, 'MSTR', yahoo) : {};
+    const ext = /** @type {any} */ (md).MSTR?.extPrice ?? held.extPrice;
+    expect(((ext - held.lastPrice) / held.lastPrice) * 100).toBeCloseTo(-2.37, 9);
+    // a holding closed but with shares again (bought back) is quoted by the board too; one sold out is not
+    expect(needsViewQuote('MSTR', { ...held, closed: true }, {})).toBe(false);
+    expect(needsViewQuote('MSTR', { ...held, closed: true, shares: 0 }, {})).toBe(true);
+    // a ticker not on the board at all (opened from a list) still asks
+    expect(needsViewQuote('NVDA', undefined, {})).toBe(true);
+  });
 });
