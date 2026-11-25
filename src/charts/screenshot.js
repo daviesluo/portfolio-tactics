@@ -20,6 +20,33 @@ export function stillClone(doc) {
   doc.head.appendChild(st);
 }
 
+/** How long a copy's style sheet is waited for before the picture is taken without it. */
+export const CLONE_SHEET_WAIT_MS = 4000;
+
+/**
+ * The clone is drawn only once it is the page: its style sheets loaded, its fonts ready, and still (`stillClone`).
+ * html2canvas-pro closes the clone's document before it puts the page's copy in, so the frame's `load` fires for an
+ * empty document and the library looks 50 ms later, whether or not the copy's `<link rel="stylesheet">` has arrived.
+ * When it had not, the saved picture was the page with no styles at all: Times, default buttons, 374 px wide for a
+ * 390 px phone (SHOT-STYLED, 2026-11-25: 3 of 7 phone runs of the sweep with a second sweep beside them, and every
+ * time with the sheet held back 400 ms). The library awaits what this returns, so it waits here for every sheet that
+ * has none yet, by its own `load` or `error`, and for the fonts that sheet names.
+ * @param {Document} doc
+ */
+export async function readyClone(doc) {
+  stillClone(doc);
+  const pending = [...doc.querySelectorAll('link[rel~="stylesheet"]')].filter((link) => !(/** @type {HTMLLinkElement} */ (link)).sheet);
+  await Promise.all(pending.map((link) => new Promise((resolve) => {
+    const done = () => resolve(undefined);
+    link.addEventListener('load', done, { once: true });
+    link.addEventListener('error', done, { once: true });
+    setTimeout(done, CLONE_SHEET_WAIT_MS);
+  })));
+  // A layout, so the fonts the sheet names are asked for; then until they are in.
+  void doc.body?.offsetHeight;
+  if (doc.fonts?.ready) await doc.fonts.ready;
+}
+
 /**
  * Rasterise a DOM node to a PNG Blob at the device pixel ratio (crisp on
  * retina / mobile, capped at 3×, a phone's own density, to bound memory:
@@ -37,7 +64,7 @@ export async function captureNodeToPng(node, ignore) {
     useCORS: true,
     logging: false,
     ignoreElements: ignore,
-    onclone: stillClone,
+    onclone: readyClone,
   });
   return await new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))), 'image/png');

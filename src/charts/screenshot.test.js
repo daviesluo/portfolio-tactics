@@ -15,7 +15,7 @@ vi.mock('html2canvas-pro', () => ({
 }));
 
 import html2canvas from 'html2canvas-pro';
-import { captureNodeToPng, copyNodeImage, saveNodeImage, isCoarsePointer, stillClone } from './screenshot.js';
+import { captureNodeToPng, copyNodeImage, saveNodeImage, isCoarsePointer, stillClone, readyClone, CLONE_SHEET_WAIT_MS } from './screenshot.js';
 
 /** @type {any} */
 const g = globalThis;
@@ -50,7 +50,7 @@ describe('the capture draws the page at rest', () => {
     vi.stubGlobal('devicePixelRatio', 3);
     await captureNodeToPng(document.createElement('div'));
     const opts = /** @type {any} */ (vi.mocked(html2canvas).mock.calls.at(-1))[1];
-    expect(opts.onclone).toBe(stillClone);
+    expect(opts.onclone).toBe(readyClone);
     expect(opts.scale).toBe(3);
     vi.stubGlobal('devicePixelRatio', 4);
     await captureNodeToPng(document.createElement('div'));
@@ -64,6 +64,61 @@ describe('the capture draws the page at rest', () => {
     expect(css).toMatch(/transition:\s*none\s*!important/);
     expect(css.startsWith('*, *::before, *::after')).toBe(true);
     expect(document.head.querySelector('style')).toBeNull();
+  });
+});
+
+// SHOT-STYLED (2026-11-25): html2canvas-pro looks at its clone 50 ms after the frame's load, which fires for the empty
+// document it closes before the page's copy goes in; a style sheet that came later left the saved picture unstyled.
+// The hook the library awaits waits for every sheet of the clone that has not loaded, and for its fonts.
+describe('the capture waits for the clone to be the page', () => {
+  /** A clone with one sheet: `sheet` is null until it "loads". @param {boolean} loaded */
+  const cloneWith = (loaded) => {
+    const doc = document.implementation.createHTMLDocument('clone');
+    const link = doc.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/assets/index-00000000.css';
+    let sheet = loaded ? {} : null;
+    Object.defineProperty(link, 'sheet', { get: () => sheet });
+    doc.head.appendChild(link);
+    return { doc, link, arrive: () => { sheet = {}; link.dispatchEvent(new Event('load')); } };
+  };
+  const settledIn = async (/** @type {Promise<unknown>} */ p) => {
+    let done = false;
+    p.then(() => { done = true; });
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    return done;
+  };
+
+  it('does not return while a style sheet of the clone has not loaded, and returns when it has', async () => {
+    const { doc, arrive } = cloneWith(false);
+    const waiting = readyClone(doc);
+    expect(await settledIn(waiting)).toBe(false);
+    // Still, already: the hook that stills the clone ran at once.
+    expect(doc.head.querySelector('style')?.textContent).toMatch(/animation:\s*none/);
+    arrive();
+    await waiting;
+  });
+
+  it('returns at once for a clone whose sheets are in, and after a sheet that fails', async () => {
+    await readyClone(cloneWith(true).doc);
+    const { doc, link } = cloneWith(false);
+    const waiting = readyClone(doc);
+    link.dispatchEvent(new Event('error'));
+    await waiting;
+  });
+
+  it('gives up on a sheet that never answers, after its wait, and waits for the fonts', async () => {
+    vi.useFakeTimers();
+    const { doc } = cloneWith(false);
+    let fonts = false;
+    Object.defineProperty(doc, 'fonts', { value: { ready: Promise.resolve().then(() => { fonts = true; }) } });
+    const waiting = readyClone(doc);
+    await vi.advanceTimersByTimeAsync(CLONE_SHEET_WAIT_MS - 1);
+    expect(await settledIn(waiting)).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await waiting;
+    expect(fonts).toBe(true);
+    vi.useRealTimers();
   });
 });
 
