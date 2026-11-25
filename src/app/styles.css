@@ -18,19 +18,22 @@
   --gain: oklch(0.78 0.17 150);
   --gain-dim: oklch(0.78 0.17 150 / 0.2);
   --txn-div-dim: oklch(0.82 0.14 85 / 0.18);
-  --loss: oklch(0.70 0.20 25);
-  --loss-dim: oklch(0.70 0.20 25 / 0.2);
+  /* In sRGB (SHOT-FAITHFUL, 2026-11-24): the OKLCH red this was written as (L 0.70, C 0.20, h 25) lies outside it, so a
+     P3 screen drew a red its own screenshot, once in sRGB, did not hold. #ff5f5b is that colour as an sRGB screen
+     always drew it; `app/styles_gamut.test.js` keeps every colour inside. */
+  --loss: #ff5f5b;
+  --loss-dim: rgb(255 95 91 / 0.2);
   /* Row-wide washes for TOP MOVERS' magnitude bars. Lower alpha than
      the `-dim` pair because these sit BEHIND 11px text for the full
      width of a row rather than acting as a border or a chip. */
   --gain-wash: oklch(0.78 0.17 150 / 0.13);
-  --loss-wash: oklch(0.70 0.20 25 / 0.13);
+  --loss-wash: rgb(255 95 91 / 0.13);
   --gold: oklch(0.82 0.14 85);
   --hot: oklch(0.82 0.14 85);
 
   --role-def: oklch(0.70 0.10 220);
   --role-mid: oklch(0.75 0.12 150);
-  --role-fwd: oklch(0.78 0.16 40);
+  --role-fwd: #ff9064; /* the OKLCH orange (L 0.78, C 0.16, h 40) as sRGB draws it: outside sRGB as it was written */
   --role-gk: oklch(0.72 0.04 280);
 
   --font-sans: 'Inter', -apple-system, system-ui, sans-serif;

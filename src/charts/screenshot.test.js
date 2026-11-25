@@ -14,7 +14,8 @@ vi.mock('html2canvas-pro', () => ({
   })),
 }));
 
-import { captureNodeToPng, copyNodeImage, saveNodeImage, isCoarsePointer } from './screenshot.js';
+import html2canvas from 'html2canvas-pro';
+import { captureNodeToPng, copyNodeImage, saveNodeImage, isCoarsePointer, stillClone } from './screenshot.js';
 
 /** @type {any} */
 const g = globalThis;
@@ -38,6 +39,31 @@ describe('captureNodeToPng', () => {
     const blob = await captureNodeToPng(document.createElement('div'));
     expect(blob).toBeInstanceOf(Blob);
     expect(blob.type).toBe('image/png');
+  });
+});
+
+// SHOT-FAITHFUL (2026-11-24): the clone html2canvas draws restarted the modal's rise, and the saved picture caught it
+// at half its opacity. The capture hands html2canvas a clone hook that switches every animation and transition off,
+// and asks for a phone's own density (3x) so its image is the screen's size.
+describe('the capture draws the page at rest', () => {
+  it('hands html2canvas the hook that stills the clone, at up to 3x', async () => {
+    vi.stubGlobal('devicePixelRatio', 3);
+    await captureNodeToPng(document.createElement('div'));
+    const opts = /** @type {any} */ (vi.mocked(html2canvas).mock.calls.at(-1))[1];
+    expect(opts.onclone).toBe(stillClone);
+    expect(opts.scale).toBe(3);
+    vi.stubGlobal('devicePixelRatio', 4);
+    await captureNodeToPng(document.createElement('div'));
+    expect(/** @type {any} */ (vi.mocked(html2canvas).mock.calls.at(-1))[1].scale).toBe(3);
+  });
+  it('the hook turns animations and transitions off in the clone, and leaves the page alone', () => {
+    const doc = document.implementation.createHTMLDocument('clone');
+    stillClone(doc);
+    const css = doc.head.querySelector('style')?.textContent || '';
+    expect(css).toMatch(/animation:\s*none\s*!important/);
+    expect(css).toMatch(/transition:\s*none\s*!important/);
+    expect(css.startsWith('*, *::before, *::after')).toBe(true);
+    expect(document.head.querySelector('style')).toBeNull();
   });
 });
 

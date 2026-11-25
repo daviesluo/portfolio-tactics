@@ -7,8 +7,23 @@
 // authored in oklch(), which the original html2canvas can't parse.
 
 /**
+ * The clone html2canvas draws holds still. Its document is a copy of the page's, so every CSS animation in it starts
+ * again from its first frame, and the picture is taken a moment later: the modal's rise (`modal-in`, opacity from 0)
+ * was caught at about half its opacity, and the saved image showed the title 128,130,122 where the screen showed
+ * 244,239,227 (SHOT-FAITHFUL, 2026-11-24; a phone's modal has no rise and was right). With animations and transitions
+ * off the clone is drawn as the page stands at rest.
+ * @param {Document} doc
+ */
+export function stillClone(doc) {
+  const st = doc.createElement('style');
+  st.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }';
+  doc.head.appendChild(st);
+}
+
+/**
  * Rasterise a DOM node to a PNG Blob at the device pixel ratio (crisp on
- * retina / mobile, capped at 2× to bound memory). `ignore` lets the
+ * retina / mobile, capped at 3×, a phone's own density, to bound memory:
+ * at 2× an iPhone's saved image was two thirds the size of its screen). `ignore` lets the
  * caller hide chrome (the action buttons) from the shot.
  * @param {HTMLElement} node
  * @param {(el: Element) => boolean} [ignore]
@@ -18,10 +33,11 @@ export async function captureNodeToPng(node, ignore) {
   const { default: html2canvas } = await import('html2canvas-pro');
   const canvas = await html2canvas(node, {
     backgroundColor: getComputedStyle(node).backgroundColor || '#0c1310',
-    scale: Math.min(window.devicePixelRatio || 1, 2),
+    scale: Math.min(window.devicePixelRatio || 1, 3),
     useCORS: true,
     logging: false,
     ignoreElements: ignore,
+    onclone: stillClone,
   });
   return await new Promise((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))), 'image/png');
