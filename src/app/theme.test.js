@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DARK_BAR, LIGHT_IDS, LIGHT_THEMES, barOf, bootSource, paintTheme, resolveTheme } from './theme.js';
+import { DARK_BAR, LIGHT_IDS, LIGHT_THEMES, RETIRED_THEMES, barOf, bootSource, paintTheme, resolveTheme, themeNow } from './theme.js';
 import { applyStoredTheme, loadThemePref, saveThemePref, watchSystemTheme } from './theme_pref.js';
 import { BOOT_FILE_RE } from './theme_build.js';
 import { Storage } from './storage.js';
@@ -35,21 +35,65 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('resolveTheme', () => {
-  const ids = ['paper', 'ink'];
+  const ids = ['daylight', 'ink'];
   it('draws the dark theme for nothing chosen, for dark, and for anything it does not know', () => {
-    for (const pref of [undefined, null, '', 'dark', 'neon', 'Paper', 7, {}, ['paper']]) {
-      expect([pref, resolveTheme(pref, 'paper', true, ids)]).toEqual([pref, 'dark']);
+    for (const pref of [undefined, null, '', 'dark', 'neon', 'Daylight', 7, {}, ['daylight']]) {
+      expect([pref, resolveTheme(pref, 'daylight', true, ids)]).toEqual([pref, 'dark']);
     }
   });
   it('draws a light theme when it is the choice, whatever the device asks for', () => {
-    expect([resolveTheme('paper', undefined, false, ids), resolveTheme('ink', 'paper', true, ids)]).toEqual(['paper', 'ink']);
+    expect([resolveTheme('daylight', undefined, false, ids), resolveTheme('ink', 'daylight', true, ids)]).toEqual(['daylight', 'ink']);
   });
   it('follows the device under system: dark at night, by day the light theme last picked, or the first when none or a dropped one', () => {
     expect(resolveTheme('system', 'ink', false, ids)).toBe('dark');
     expect(resolveTheme('system', 'ink', true, ids)).toBe('ink');
-    expect(resolveTheme('system', undefined, true, ids)).toBe('paper');
-    expect(resolveTheme('system', 'sage', true, ids)).toBe('paper');
+    expect(resolveTheme('system', undefined, true, ids)).toBe('daylight');
+    expect(resolveTheme('system', 'neon', true, ids)).toBe('daylight');
     expect(resolveTheme('system', 'ink', true, [])).toBe('dark');
+  });
+});
+
+// Davies kept Daylight and Ink of the four designs (2026-11-25: "b和d都留下吧可选 ... 其他的删了"). A browser that had
+// picked Chalk Paper or Sage holds 'paper' or 'sage' in dp.prefs: read as unknown, its day mode would turn dark the
+// day the theme went. Each is read as Daylight, by the rule, the stored choice, and the script before the first paint.
+describe('a theme since dropped', () => {
+  it('is one of Chalk Paper and Sage, each replaced by a theme that is still offered', () => {
+    expect(Object.keys(RETIRED_THEMES).sort()).toEqual(['paper', 'sage']);
+    for (const [was, now] of Object.entries(RETIRED_THEMES)) expect([was, now, LIGHT_IDS.includes(now), LIGHT_IDS.includes(was)]).toEqual([was, 'daylight', true, false]);
+    expect([themeNow('paper'), themeNow('sage'), themeNow('ink'), themeNow('system'), themeNow('constructor'), themeNow(undefined)]).toEqual(['daylight', 'daylight', 'ink', 'system', 'constructor', undefined]);
+  });
+  it('is drawn as Daylight by the rule: chosen outright, or as the light theme Auto draws by day', () => {
+    for (const was of ['paper', 'sage']) {
+      expect([was, resolveTheme(was, undefined, false, LIGHT_IDS, RETIRED_THEMES)]).toEqual([was, 'daylight']);
+      expect([was, resolveTheme('system', was, true, LIGHT_IDS, RETIRED_THEMES)]).toEqual([was, 'daylight']);
+      expect([was, resolveTheme('system', was, false, LIGHT_IDS, RETIRED_THEMES)]).toEqual([was, 'dark']);
+      // Without the list of dropped themes the name is unknown, and the page dark: what this guards against.
+      expect([was, resolveTheme(was, undefined, false, LIGHT_IDS)]).toEqual([was, 'dark']);
+    }
+    expect(resolveTheme('constructor', 'toString', true, LIGHT_IDS, RETIRED_THEMES)).toBe('dark');
+  });
+  it('reads from storage as Daylight, is drawn as Daylight, and a later pick is stored under a name still offered', () => {
+    Storage.savePrefs({ hideValues: true, theme: 'paper', lightTheme: 'paper' });
+    expect(loadThemePref()).toEqual({ theme: 'daylight', lightTheme: 'daylight' });
+    expect(applyStoredTheme()).toBe('daylight');
+    expect([theme(), bar()]).toEqual(['daylight', barOf('daylight')]);
+    Storage.savePrefs({ theme: 'system', lightTheme: 'sage' });
+    device(true);
+    expect([loadThemePref(), applyStoredTheme()]).toEqual([{ theme: 'system', lightTheme: 'daylight' }, 'daylight']);
+    expect(saveThemePref('dark')).toEqual({ theme: 'dark', lightTheme: 'daylight' });
+    expect(Storage.loadPrefs().lightTheme).toBe('daylight');
+  });
+  it('is on the page as Daylight before the first paint, from the script and from the committed bundle', () => {
+    const html = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
+    const built = fs.readFileSync(path.join(DIST, /<script src="\/(assets\/theme-boot-[0-9a-f]{8}\.js)">/.exec(html)?.[1] ?? ''), 'utf8');
+    for (const source of [bootSource(), built]) {
+      for (const prefs of ['{"theme":"paper"}', '{"theme":"sage","lightTheme":"sage"}']) {
+        localStorage.setItem('dp.prefs', prefs);
+        document.documentElement.removeAttribute('data-theme');
+        new Function(source)();
+        expect([prefs, theme(), bar()]).toEqual([prefs, 'daylight', barOf('daylight')]);
+      }
+    }
   });
 });
 
@@ -62,8 +106,8 @@ describe('paintTheme', () => {
   });
   it('draws the theme on a page that has no theme-color meta', () => {
     document.head.innerHTML = '';
-    paintTheme(document, 'paper', barOf('paper'));
-    expect(theme()).toBe('paper');
+    paintTheme(document, 'daylight', barOf('daylight'));
+    expect(theme()).toBe('daylight');
   });
 });
 
@@ -76,12 +120,12 @@ describe('the stored choice (dp.prefs)', () => {
 
   it('saving a theme keeps hide-values and every other preference of the bag, and draws it at once', () => {
     Storage.savePrefs({ hideValues: true, moversMetric: 'usd', moversWindow: '1M' });
-    expect(saveThemePref('sage')).toEqual({ theme: 'sage', lightTheme: 'sage' });
-    expect(JSON.parse(localStorage.getItem('dp.prefs') ?? '{}')).toEqual({ hideValues: true, moversMetric: 'usd', moversWindow: '1M', theme: 'sage', lightTheme: 'sage' });
-    expect([theme(), bar()]).toEqual(['sage', barOf('sage')]);
+    expect(saveThemePref('ink')).toEqual({ theme: 'ink', lightTheme: 'ink' });
+    expect(JSON.parse(localStorage.getItem('dp.prefs') ?? '{}')).toEqual({ hideValues: true, moversMetric: 'usd', moversWindow: '1M', theme: 'ink', lightTheme: 'ink' });
+    expect([theme(), bar()]).toEqual(['ink', barOf('ink')]);
     // Another preference saved afterwards, the way the board saves one, keeps the theme.
     Storage.savePrefs({ ...Storage.loadPrefs(), hideValues: false });
-    expect(loadThemePref()).toEqual({ theme: 'sage', lightTheme: 'sage' });
+    expect(loadThemePref()).toEqual({ theme: 'ink', lightTheme: 'ink' });
   });
 
   it('Dark and Auto remember the light theme last picked; a name it does not know is saved as dark', () => {
@@ -110,9 +154,9 @@ describe('the stored choice (dp.prefs)', () => {
     expect([theme(), bar()]).toEqual(['ink', barOf('ink')]);
     turn(false);
     expect([document.documentElement.hasAttribute('data-theme'), bar()]).toEqual([false, DARK_BAR]);
-    saveThemePref('paper');
+    saveThemePref('daylight');
     turn(false);
-    expect(theme()).toBe('paper');
+    expect(theme()).toBe('daylight');
   });
 });
 
@@ -125,7 +169,7 @@ describe('the script before the first paint', () => {
     expect(source).toContain(JSON.stringify(LIGHT_IDS));
     for (const light of [false, true]) {
       device(light);
-      for (const prefs of [null, '{}', '{"theme":"dark"}', '{"theme":"neon"}', '{not json', '{"theme":"system"}', '{"theme":"system","lightTheme":"ink"}',
+      for (const prefs of [null, '{}', '{"theme":"dark"}', '{"theme":"neon"}', '{not json', '{"theme":"system"}', '{"theme":"system","lightTheme":"ink"}', '{"theme":"paper"}', '{"theme":"system","lightTheme":"sage"}',
         ...LIGHT_IDS.map((id) => JSON.stringify({ hideValues: true, theme: id, lightTheme: id }))]) {
         localStorage.clear();
         if (prefs !== null) localStorage.setItem('dp.prefs', prefs);

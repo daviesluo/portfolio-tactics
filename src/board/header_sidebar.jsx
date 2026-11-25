@@ -480,8 +480,8 @@ function HeaderMenu({ isReadOnly = false, agents = false, onOpenHoldingsList, on
 }
 
 /**
- * DAY-MODE (2026-11-25): the theme, at the foot of the menu. Dark is the site as it has always been; each light theme
- * is one of the designs Davies is choosing among (app/theme.js); Auto follows the device, drawing the light theme
+ * DAY-MODE (2026-11-25): the theme, at the foot of the menu. Dark is the site as it has always been; the light themes
+ * are the two designs Davies kept of four, Daylight and Ink (app/theme.js); Auto follows the device, drawing the light theme
  * last picked by day. A pick is drawn at once and the menu stays open, so the themes can be compared one after
  * another; it is kept in `dp.prefs` (app/theme_pref.js) and drawn before the first paint of the next visit.
  */

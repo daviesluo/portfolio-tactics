@@ -1,89 +1,9 @@
 /* DAY-MODE (2026-11-25; Davies: "I want a day mode for the website ... several different designs for me to choose
-   from"): four light themes, each nothing but values for the tokens `styles.css` defines, chosen by `data-theme` on
-   <html> (`app/theme.js`). No attribute is the dark theme, which this file does not touch: every selector here needs
-   the attribute. The choice among the four is Davies'; to drop one, delete its block here and in `agents/agents.css`
-   and its entry in `app/theme.js` (`app/themes.test.js` fails until the three agree). The test also holds each theme's
-   text and figures to their contrast on its page and its panels. */
-
-/* ---- Chalk Paper ---- */
-:root[data-theme="paper"] {
-  color-scheme: light;
-  --bg: #f5f1e6;
-  --bg-2: #faf7ef;
-  --bg-rgb: 245, 241, 230;
-  --bg-glow: #fbf8f0;
-  --surface: #faf7ef;
-  --surface-ring: #faf7ef;
-  --chalk: #14201b;
-  --chalk-rgb: 20, 32, 27;
-  --chalk-dim: rgb(20 32 27 / 0.68);
-  --chalk-mute: rgb(20 32 27 / 0.52);
-  --chalk-hi: #000;
-  --line: rgb(20 32 27 / 0.16);
-  --line-2: rgb(20 32 27 / 0.09);
-  --panel: rgb(20 32 27 / 0.035);
-  --panel-hi: rgb(20 32 27 / 0.07);
-  --gain: #026940;
-  --gain-dim: rgb(2 105 64 / 0.14);
-  --gain-wash: rgb(2 105 64 / 0.09);
-  --loss: #b71824;
-  --loss-dim: rgb(183 24 36 / 0.14);
-  --loss-wash: rgb(183 24 36 / 0.09);
-  --gold: #7a5103;
-  --hot: #7a5103;
-  --txn-div-dim: rgb(122 81 3 / 0.16);
-  --role-def: #1c7592;
-  --role-mid: #2c7f4a;
-  --role-fwd: #b8501c;
-  --role-gk: #5d6088;
-  --hi-rgb: 20, 32, 27;
-  --shade-18: rgb(20 32 27 / 0.0288);
-  --shade-22: rgb(20 32 27 / 0.0352);
-  --shade-25: rgb(20 32 27 / 0.04);
-  --shade-30: rgb(20 32 27 / 0.048);
-  --shade-35: rgb(20 32 27 / 0.056);
-  --shade-40: rgb(20 32 27 / 0.064);
-  --shade-50: rgb(20 32 27 / 0.08);
-  --shade-55: rgb(20 32 27 / 0.088);
-  --shade-60: rgb(20 32 27 / 0.096);
-  --shade-70: rgb(20 32 27 / 0.112);
-  --gold-wash: rgb(122 81 3 / 0.14);
-  --gold-glow: rgb(122 81 3 / 0.18);
-  --gold-tint: rgb(122 81 3 / 0.06);
-  --gain-edge: rgb(2 105 64 / 0.4);
-  --scrim-rgb: 245, 241, 230;
-  --on-accent: #faf7ef;
-  --on-gold: #faf7ef;
-  --link: #1f62b0;
-  --backdrop: rgb(20 32 27 / 0.42);
-  --tip-bg: #faf7ef;
-  --chart-ref: #646a62;
-  --chart-ref-2: #58708c;
-  --chip-gain: #026940;
-  --chip-loss: #b71824;
-  --chip-ref: #646a62;
-  --chip-ink: #fff;
-  --hm-flat-1: #e2ded2;
-  --hm-flat-2: #d9d5c8;
-  --sess-after: #7a3fd1;
-  --sess-night: #3f55a8;
-  --icon-wash: brightness(0) opacity(0.68);
-  --pitch: #10241c;
-  --pitch-2: rgb(20 32 27 / 0.045);
-  --pitch-line-rgb: 244, 239, 227;
-}
-:root[data-theme="paper"] .pitch-legend .legend-sw { --gold: #eebc4a; --gain: #56d57b; --loss: #ff5f5b; }
-/* The tactics board stays a chalkboard: inside it the dark theme's values hold. */
-:root[data-theme="paper"] .pitch {
-  --bg: #0c1310; --bg-rgb: 12, 19, 16; --chalk: #f4efe3; --chalk-rgb: 244, 239, 227; --chalk-dim: rgba(244,239,227,0.5); --chalk-mute: rgba(244,239,227,0.25);
-  --line: rgba(244,239,227,0.14); --line-2: rgba(244,239,227,0.08); --panel: rgba(244,239,227,0.035); --panel-hi: rgba(244,239,227,0.06);
-  --gain: #56d57b; --gain-dim: rgb(86 213 123 / 0.2); --loss: #ff5f5b; --loss-dim: rgb(255 95 91 / 0.2); --gold: #eebc4a; --hot: #eebc4a;
-  --role-def: #4aadc9; --role-mid: #73c385; --role-fwd: #ff9064; --role-gk: #9fa2be;
-  --hi-rgb: 255, 255, 255; --on-accent: #0c1310;
-  --shade-18: rgba(0,0,0,0.18); --shade-22: rgba(0,0,0,0.22); --shade-25: rgba(0,0,0,0.25); --shade-30: rgba(0,0,0,0.3); --shade-35: rgba(0,0,0,0.35); --shade-40: rgba(0,0,0,0.4); --shade-50: rgba(0,0,0,0.5); --shade-55: rgba(0,0,0,0.55); --shade-60: rgba(0,0,0,0.6); --shade-70: rgba(0,0,0,0.7);
-  --gold-glow: rgb(238 188 74 / 0.18); --tip-bg: rgba(0,0,0,0.85); --pitch-2: #0c1d16;
-  color: var(--chalk);
-}
+   from"; of the four shown he kept two, "b和d都留下吧可选 ... 其他的删了"): Daylight and Ink, each nothing but values for
+   the tokens `styles.css` defines, chosen by `data-theme` on <html> (`app/theme.js`). No attribute is the dark theme,
+   which this file does not touch: every selector here needs the attribute. A theme is its block here, its block at
+   the end of `agents/agents.css` and its entry in `app/theme.js` (`app/themes.test.js` fails until the three agree).
+   The test also holds each theme's text and figures to their contrast on its page and its panels. */
 
 /* ---- Daylight ---- */
 :root[data-theme="daylight"] {
@@ -148,82 +68,13 @@
   --sess-after: #7a3fd1;
   --sess-night: #3f55a8;
   --icon-wash: brightness(0) opacity(0.66);
-  --pitch: #d5e6d7;
-  --pitch-2: #c9dccc;
+  --pitch: #e0eee1;
+  --pitch-2: #d6e6d8;
   --pitch-line-rgb: 31, 77, 54;
 }
 :root[data-theme="daylight"] :is(.mc-card, .player-card, .lot-summary, .txn-realized, .live-pill, .ro-badge) { background: var(--panel); }
 :root[data-theme="daylight"] :is(.panel, .mc-card, .scoreboard) { box-shadow: 0 1px 2px rgb(17 26 22 / 0.05), 0 2px 8px rgb(17 26 22 / 0.04); }
 :root[data-theme="daylight"] .scoreboard { background: #ffffff; }
-
-/* ---- Sage ---- */
-:root[data-theme="sage"] {
-  color-scheme: light;
-  --bg: #e5ece6;
-  --bg-2: #f0f4f0;
-  --bg-rgb: 229, 236, 230;
-  --bg-glow: #edf2ed;
-  --surface: #f0f4f0;
-  --surface-ring: #f0f4f0;
-  --chalk: #12201a;
-  --chalk-rgb: 18, 32, 26;
-  --chalk-dim: rgb(18 32 26 / 0.7);
-  --chalk-mute: rgb(18 32 26 / 0.54);
-  --chalk-hi: #000;
-  --line: rgb(18 32 26 / 0.15);
-  --line-2: rgb(18 32 26 / 0.085);
-  --panel: rgb(255 255 255 / 0.5);
-  --panel-hi: rgb(255 255 255 / 0.78);
-  --gain: #035f3d;
-  --gain-dim: rgb(3 95 61 / 0.14);
-  --gain-wash: rgb(3 95 61 / 0.09);
-  --loss: #a32226;
-  --loss-dim: rgb(163 34 38 / 0.14);
-  --loss-wash: rgb(163 34 38 / 0.09);
-  --gold: #6d4b04;
-  --hot: #6d4b04;
-  --txn-div-dim: rgb(109 75 4 / 0.16);
-  --role-def: #1b6c87;
-  --role-mid: #2a7545;
-  --role-fwd: #a9491a;
-  --role-gk: #55587e;
-  --hi-rgb: 18, 32, 26;
-  --shade-18: rgb(18 32 26 / 0.027);
-  --shade-22: rgb(18 32 26 / 0.033);
-  --shade-25: rgb(18 32 26 / 0.0375);
-  --shade-30: rgb(18 32 26 / 0.045);
-  --shade-35: rgb(18 32 26 / 0.0525);
-  --shade-40: rgb(18 32 26 / 0.06);
-  --shade-50: rgb(18 32 26 / 0.075);
-  --shade-55: rgb(18 32 26 / 0.0825);
-  --shade-60: rgb(18 32 26 / 0.09);
-  --shade-70: rgb(18 32 26 / 0.105);
-  --gold-wash: rgb(109 75 4 / 0.14);
-  --gold-glow: rgb(109 75 4 / 0.18);
-  --gold-tint: rgb(109 75 4 / 0.06);
-  --gain-edge: rgb(3 95 61 / 0.4);
-  --scrim-rgb: 229, 236, 230;
-  --on-accent: #f0f4f0;
-  --on-gold: #f0f4f0;
-  --link: #1b5aa3;
-  --backdrop: rgb(18 32 26 / 0.42);
-  --tip-bg: #f0f4f0;
-  --chart-ref: #56625c;
-  --chart-ref-2: #4a6685;
-  --chip-gain: #035f3d;
-  --chip-loss: #a32226;
-  --chip-ref: #56625c;
-  --chip-ink: #fff;
-  --hm-flat-1: #d4dcd5;
-  --hm-flat-2: #cad3cb;
-  --sess-after: #6d36bf;
-  --sess-night: #38509c;
-  --icon-wash: brightness(0) opacity(0.7);
-  --pitch: #c5dac9;
-  --pitch-2: #b9d0be;
-  --pitch-line-rgb: 28, 70, 49;
-}
-:root[data-theme="sage"] :is(.mc-card, .player-card, .lot-summary, .txn-realized, .live-pill, .ro-badge) { background: var(--panel); }
 
 /* ---- Ink ---- */
 :root[data-theme="ink"] {
@@ -288,8 +139,8 @@
   --sess-after: #5f2bb0;
   --sess-night: #30468c;
   --icon-wash: brightness(0) opacity(0.74);
-  --pitch: #dbe8dc;
-  --pitch-2: #d0dfd2;
+  --pitch: #e5f0e6;
+  --pitch-2: #dbe9dd;
   --pitch-line-rgb: 20, 56, 38;
 }
 

@@ -2,27 +2,29 @@
 // theme 'system' draws by day), and the page drawn from it. The rule itself is app/theme.js's; the first paint of a
 // visit is the boot script's (app/theme_build.js), which reads the same two keys.
 import { Storage } from './storage.js';
-import { LIGHT_IDS, barOf, paintTheme, resolveTheme } from './theme.js';
+import { LIGHT_IDS, RETIRED_THEMES, barOf, paintTheme, resolveTheme, themeNow } from './theme.js';
 
 const SYSTEM_LIGHT = '(prefers-color-scheme: light)';
 const systemLight = () => typeof matchMedia === 'function' && matchMedia(SYSTEM_LIGHT).matches;
 
 /**
- * The stored choice: 'dark' (also for nothing stored, or a theme since dropped), 'system', or a light theme's id; and
- * the light theme 'system' draws.
+ * The stored choice: 'dark' (also for nothing stored or a damaged value), 'system', or a light theme's id; and the
+ * light theme 'system' draws. A theme since dropped reads as its replacement (`RETIRED_THEMES`: Daylight), so the menu
+ * ticks the theme the page is drawn in.
  * @returns {{ theme: string, lightTheme: string }}
  */
 export function loadThemePref() {
   const p = Storage.loadPrefs() || {};
-  const theme = p.theme === 'system' || LIGHT_IDS.includes(p.theme) ? p.theme : 'dark';
-  const lightTheme = LIGHT_IDS.includes(p.lightTheme) ? p.lightTheme : LIGHT_IDS[0];
+  const stored = String(themeNow(p.theme)), storedLight = String(themeNow(p.lightTheme));
+  const theme = stored === 'system' || LIGHT_IDS.includes(stored) ? stored : 'dark';
+  const lightTheme = LIGHT_IDS.includes(storedLight) ? storedLight : LIGHT_IDS[0];
   return { theme, lightTheme };
 }
 
 /** Draws the stored choice on this page. @returns {string} the theme drawn */
 export function applyStoredTheme() {
   const { theme, lightTheme } = loadThemePref();
-  const drawn = resolveTheme(theme, lightTheme, systemLight(), LIGHT_IDS);
+  const drawn = resolveTheme(theme, lightTheme, systemLight(), LIGHT_IDS, RETIRED_THEMES);
   paintTheme(document, drawn, barOf(drawn));
   return drawn;
 }
