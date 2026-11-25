@@ -322,10 +322,10 @@ describe('TickerChartModal — 1Y shows MA 50 beside MA 200', () => {
     expect(texts).toContain('MA 50');
     const c50 = container.querySelector('path[data-ma="50"]')?.getAttribute('stroke');
     const c200 = container.querySelector('path[data-ma="200"]')?.getAttribute('stroke');
-    expect(c50).toBe('#8b9bb4');
-    expect(c200).toBe('#6b7280');
+    expect(c50).toBe('var(--chart-ref-2)');
+    expect(c200).toBe('var(--chart-ref)');
     expect(c50).not.toBe(c200);
-    const priceStroke = [...container.querySelectorAll('svg path[stroke^="var(--"]')].map((p) => p.getAttribute('stroke'));
+    const priceStroke = [...container.querySelectorAll('svg path[stroke^="var(--"]:not([data-ma])')].map((p) => p.getAttribute('stroke'));
     expect(priceStroke.length).toBeGreaterThan(0);
     expect(priceStroke).not.toContain(c50);
   });
@@ -347,7 +347,7 @@ describe('TickerChartModal — 1Y shows MA 50 beside MA 200', () => {
     const { container } = renderModal({ holding });
     await user.click(screen.getByRole('button', { name: '1M' }));
     expect(container.querySelectorAll('path[data-ma]')).toHaveLength(1);
-    expect(container.querySelector('path[data-ma="10"]')?.getAttribute('stroke')).toBe('#6b7280');
+    expect(container.querySelector('path[data-ma="10"]')?.getAttribute('stroke')).toBe('var(--chart-ref)');
     const maLabels = [...container.querySelectorAll('svg text')].filter((t) => /^MA \d+$/.test(t.textContent || ''));
     expect(maLabels).toHaveLength(1);
   });
@@ -418,8 +418,8 @@ describe('TickerChartModal — 6M replaces YTD and shows MA 50 with MA 20', () =
   it('styles them as 1Y does: the 50 grey, the 20 in the grey-blue, both labelled', async () => {
     const all = ramp(200);
     const { container } = await open6M(all, all.slice(74));
-    expect(container.querySelector('path[data-ma="50"]')?.getAttribute('stroke')).toBe('#6b7280');
-    expect(container.querySelector('path[data-ma="20"]')?.getAttribute('stroke')).toBe('#8b9bb4');
+    expect(container.querySelector('path[data-ma="50"]')?.getAttribute('stroke')).toBe('var(--chart-ref)');
+    expect(container.querySelector('path[data-ma="20"]')?.getAttribute('stroke')).toBe('var(--chart-ref-2)');
     const texts = [...container.querySelectorAll('svg text')].map((t) => t.textContent);
     expect(texts).toContain('MA 50');
     expect(texts).toContain('MA 20');

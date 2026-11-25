@@ -18,6 +18,8 @@ import {
 import { londonTimeParts, usClockPhase, ukTzAbbr } from '../prices/market_hours.js';
 import { isCnFund } from '../prices/ticker_class.js';
 import { Storage } from '../app/storage.js';
+import { DARK_BAR, LIGHT_THEMES } from '../app/theme.js';
+import { loadThemePref, saveThemePref } from '../app/theme_pref.js';
 import { fetchFundamentals } from '../prices/yahoo_fetch.js';
 import { quoteDayMove, fxPendingOf } from '../portfolio/metrics.js';
 import { PerfPanel } from '../charts/perf_chart.jsx';
@@ -54,8 +56,8 @@ function EyeClosedIcon() {
 const PHASE = {
   regular:    { color: "var(--gain)",   label: "Market Open" },
   premarket:  { color: "var(--gold)",   label: "Pre-market" },
-  afterhours: { color: "#b779ff",       label: "After-hours" },
-  overnight:  { color: "#5b6fb8",       label: "Overnight" },
+  afterhours: { color: "var(--sess-after)",       label: "After-hours" },
+  overnight:  { color: "var(--sess-night)",       label: "Overnight" },
   closed:     { color: "var(--chalk-mute)", label: "Market Closed" },
 };
 
@@ -470,8 +472,45 @@ function HeaderMenu({ isReadOnly = false, agents = false, onOpenHoldingsList, on
               onClick={() => { setOpen(false); onOpenAgents && onOpenAgents(); }}
             >Agents (beta)</button>
           )}
+          <ThemePicker />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * DAY-MODE (2026-11-25): the theme, at the foot of the menu. Dark is the site as it has always been; each light theme
+ * is one of the designs Davies is choosing among (app/theme.js); Auto follows the device, drawing the light theme
+ * last picked by day. A pick is drawn at once and the menu stays open, so the themes can be compared one after
+ * another; it is kept in `dp.prefs` (app/theme_pref.js) and drawn before the first paint of the next visit.
+ */
+export function ThemePicker() {
+  const [pref, setPref] = React.useState(loadThemePref);
+  const byDay = LIGHT_THEMES.find((t) => t.id === pref.lightTheme) ?? LIGHT_THEMES[0];
+  const options = [
+    { id: 'dark', name: 'Dark', sw: DARK_BAR, title: 'The dark theme' },
+    ...LIGHT_THEMES.map((t) => ({ id: t.id, name: t.name, sw: t.bar, title: `${t.name}, a light theme` })),
+    { id: 'system', name: 'Auto', sw: `linear-gradient(90deg, ${byDay.bar} 50%, ${DARK_BAR} 50%)`, title: `Follows this device: ${byDay.name} when it is set to light, Dark when it is set to dark` },
+  ];
+  return (
+    <div className="theme-picker" role="group" aria-label="Theme">
+      <div className="header-menu-label">Theme</div>
+      {options.map((o) => (
+        <button
+          key={o.id}
+          className={`header-menu-item theme-item${pref.theme === o.id ? ' on' : ''}`}
+          role="menuitemradio"
+          aria-checked={pref.theme === o.id}
+          data-theme-pick={o.id}
+          title={o.title}
+          onClick={() => setPref(saveThemePref(o.id))}
+        >
+          <span className="theme-sw" style={{ background: o.sw }} aria-hidden="true" />
+          <span className="theme-name">{o.name}</span>
+          {pref.theme === o.id && <span className="theme-tick" aria-hidden="true">✓</span>}
+        </button>
+      ))}
     </div>
   );
 }

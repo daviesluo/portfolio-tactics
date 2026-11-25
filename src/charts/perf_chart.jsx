@@ -1367,7 +1367,7 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
   const portColor = isInv
     ? ((portWindowPct ?? 0) >= 0 ? 'var(--gain)' : 'var(--loss)')
     : (portCurrent != null && portCurrent >= 0 ? 'var(--gain)' : 'var(--loss)');
-  const spColor   = '#6b7280';
+  const spColor   = 'var(--chart-ref)';
   const zeroY = yOf(0);
 
   // Two-decimal precision matches the ticker drill modal's per-row %
@@ -1441,7 +1441,7 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
       // dollar view every balance is positive, so it follows the
       // window's own direction instead.
       const chipPositive = isInv ? ((portWindowPct ?? 0) >= 0) : (p.v >= 0);
-      cPortRect.current.setAttribute('fill', chipPositive ? 'rgba(70,160,90,0.85)' : 'rgba(190,60,70,0.85)');
+      cPortRect.current.setAttribute('fill', chipPositive ? 'var(--chip-gain)' : 'var(--chip-loss)');
       cPortText.current.setAttribute('y', String((portY).toFixed(1)));
       cPortText.current.textContent =
         (hasDerivedHead && idx < splitIdx ? '~' : '') + fmtSeriesVal(p.v);
@@ -1543,7 +1543,7 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
                   stroke="var(--line-2)" strokeWidth="0.5"
                   strokeDasharray={t === 0 ? undefined : "2,3"} />
             <text x={padL - 3} y={yOf(t).toFixed(1)} textAnchor="end" dominantBaseline="middle"
-                  fontSize="7.5" fill="rgba(244,239,227,0.38)" fontFamily="var(--font-mono)">
+                  fontSize="7.5" fill="rgba(var(--chalk-rgb), 0.38)" fontFamily="var(--font-mono)">
               {isInv ? (hideValues ? '••' : fmtAxisMoney(t)) : `${t >= 0 ? '+' : ''}${t}%`}
             </text>
           </g>
@@ -1561,7 +1561,7 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
             <line x1={m.x.toFixed(1)} y1={padT} x2={m.x.toFixed(1)} y2={H - padB}
                   stroke="var(--line-2)" strokeWidth="0.4" />
             <text x={m.x.toFixed(1)} y={H - padB + 9} textAnchor="middle"
-                  fontSize="7.5" fill="rgba(244,239,227,0.38)" fontFamily="var(--font-mono)">
+                  fontSize="7.5" fill="rgba(var(--chalk-rgb), 0.38)" fontFamily="var(--font-mono)">
               {m.label}
             </text>
           </g>
@@ -1603,9 +1603,9 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
             return (
               <g key={label}>
                 <line x1={x} y1={padT} x2={x} y2={H - padB}
-                      stroke="rgba(244,239,227,0.45)" strokeWidth="0.8" strokeDasharray="3,3" />
+                      stroke="rgba(var(--chalk-rgb), 0.45)" strokeWidth="0.8" strokeDasharray="3,3" />
                 <text x={x} y={padT - 2} textAnchor="middle"
-                      fontSize="7" fill="rgba(244,239,227,0.5)" fontFamily="var(--font-mono)">
+                      fontSize="7" fill="rgba(var(--chalk-rgb), 0.5)" fontFamily="var(--font-mono)">
                   {label}
                 </text>
               </g>
@@ -1637,9 +1637,9 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
           return (
             <g>
               <line x1={x} y1={padT} x2={x} y2={H - padB}
-                    stroke="rgba(244,239,227,0.35)" strokeWidth="0.7" strokeDasharray="2,3" />
+                    stroke="rgba(var(--chalk-rgb), 0.35)" strokeWidth="0.7" strokeDasharray="2,3" />
               <text x={x} y={padT - 2} textAnchor="middle"
-                    fontSize="6.5" fill="rgba(244,239,227,0.45)" fontFamily="var(--font-mono)">
+                    fontSize="6.5" fill="rgba(var(--chalk-rgb), 0.45)" fontFamily="var(--font-mono)">
                 RECORDED
               </text>
             </g>
@@ -1654,7 +1654,7 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
         {lineA.length > 0 && (() => {
           const last = lineA[lineA.length - 1];
           return <circle cx={xOfPort(last.date).toFixed(1)} cy={yOf(last.v).toFixed(1)}
-                         r="3" fill={portColor} stroke="#0c1310" strokeWidth="1.5" />;
+                         r="3" fill={portColor} stroke="var(--surface-ring)" strokeWidth="1.5" />;
         })()}
         {/* Hover crosshair — vertical line + per-line dots + a tiny
             date label under the chart and per-series % chips next
@@ -1662,26 +1662,26 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
             mousemove. */}
         <g ref={crossRef} style={{ display: 'none' }}>
           <line ref={cVlineRef} x1={padL} y1={padT} x2={padL} y2={H - padB}
-                stroke="rgba(244,239,227,0.5)" strokeWidth="0.6" strokeDasharray="2,2" />
+                stroke="rgba(var(--chalk-rgb), 0.5)" strokeWidth="0.6" strokeDasharray="2,2" />
           <circle ref={cPortDot} cx={padL} cy={padT} r="2.5"
-                  fill={portColor} stroke="#0c1310" strokeWidth="1" />
+                  fill={portColor} stroke="var(--surface-ring)" strokeWidth="1" />
           <circle ref={cSpDot}   cx={padL} cy={padT} r="2.5"
-                  fill={spColor}   stroke="#0c1310" strokeWidth="1" />
+                  fill={spColor}   stroke="var(--surface-ring)" strokeWidth="1" />
           {/* Date pill under the chart */}
           <rect ref={cDateRect} x={padL} y={H - padB + 1} width={44} height={11}
-                fill="#0c1310" stroke="var(--chalk-dim)" strokeWidth="0.5" />
+                fill="var(--surface-ring)" stroke="var(--chalk-dim)" strokeWidth="0.5" />
           <text ref={cDateText} x={padL} y={H - padB + 9} textAnchor="middle"
                 fontSize="7.5" fill="var(--chalk)" fontFamily="var(--font-mono)" />
           {/* PORTFOLIO % chip — drawn left of the dot */}
           <rect ref={cPortRect} x={padL + 4} width={32} height={11} rx={1.5}
-                fill="rgba(70,160,90,0.85)" />
+                fill="var(--chip-gain)" />
           <text ref={cPortText} x={padL + 20} dominantBaseline="middle" textAnchor="middle"
-                fontSize="7.5" fill="#fff" fontFamily="var(--font-mono)" fontWeight="600" />
+                fontSize="7.5" fill="var(--chip-ink)" fontFamily="var(--font-mono)" fontWeight="600" />
           {/* S&P % chip */}
           <rect ref={cSpRect} x={padL + 4} width={32} height={11} rx={1.5}
-                fill="rgba(107,114,128,0.85)" />
+                fill="var(--chip-ref)" />
           <text ref={cSpText} x={padL + 20} dominantBaseline="middle" textAnchor="middle"
-                fontSize="7.5" fill="#fff" fontFamily="var(--font-mono)" fontWeight="600" />
+                fontSize="7.5" fill="var(--chip-ink)" fontFamily="var(--font-mono)" fontWeight="600" />
         </g>
       </svg>
 

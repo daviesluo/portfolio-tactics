@@ -228,10 +228,10 @@ function PasswordPrompt({ onSubmit }) {
   /** @type {React.CSSProperties} */
   const card = { display: 'flex', flexDirection: 'column', gap: '13px', width: '258px', padding: '34px 30px', border: '1px solid #2a2a2a', borderRadius: '4px' };
   return (
-    <div style={screen}>
-      <form style={card} onSubmit={(e) => { e.preventDefault(); if (pw) onSubmit(pw); }}>
-        <div style={{ color: '#ccc', fontFamily: 'monospace', letterSpacing: '0.18em', fontSize: '13px', textAlign: 'center' }}>DAVIES&rsquo; PORTFOLIOS</div>
-        <div style={{ color: '#666', fontFamily: 'monospace', fontSize: '11px', textAlign: 'center', marginBottom: '3px' }}>Enter password to continue</div>
+    <div className="gate-screen" style={screen}>
+      <form className="gate-card" style={card} onSubmit={(e) => { e.preventDefault(); if (pw) onSubmit(pw); }}>
+        <div className="gate-hi" style={{ color: '#ccc', fontFamily: 'monospace', letterSpacing: '0.18em', fontSize: '13px', textAlign: 'center' }}>DAVIES&rsquo; PORTFOLIOS</div>
+        <div className="gate-dim" style={{ color: '#666', fontFamily: 'monospace', fontSize: '11px', textAlign: 'center', marginBottom: '3px' }}>Enter password to continue</div>
         <input
           type="password"
           autoFocus
@@ -239,11 +239,13 @@ function PasswordPrompt({ onSubmit }) {
           onChange={(e) => setPw(e.target.value)}
           placeholder="Password"
           aria-label="Password"
+          className="gate-inp"
           style={{ background: '#0f1815', color: '#eee', border: '1px solid #2a3a33', borderRadius: '3px', padding: '9px 11px', fontFamily: 'monospace', fontSize: '13px', outline: 'none' }}
         />
         <button
           type="submit"
           disabled={!pw}
+          className="gate-btn"
           style={{ background: pw ? '#1e3a30' : '#16211d', color: pw ? '#dfe9e4' : '#4a5a52', border: '1px solid #2e4a3e', borderRadius: '3px', padding: '9px', fontFamily: 'monospace', fontSize: '12px', letterSpacing: '0.1em', cursor: pw ? 'pointer' : 'default' }}
         >ENTER</button>
       </form>
@@ -321,8 +323,8 @@ function App() {
 
   if (auth === undefined) {
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
-        <div style={{ color: '#888', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '12px' }}>AUTHENTICATING…</div>
+      <div className="gate-screen" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
+        <div className="gate-dim" style={{ color: '#888', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '12px' }}>AUTHENTICATING…</div>
       </div>
     );
   }
@@ -332,11 +334,11 @@ function App() {
   if (auth && auth.locked && auth.busy) {
     const minutesLeft = Math.max(1, Math.ceil(((auth.lockUntil ?? 0) - Date.now()) / 1000 / 60));
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
-        <div style={{ textAlign: 'center', padding: '40px', border: '1px solid #2a2a2a', borderRadius: '4px' }}>
-          <div style={{ color: '#fa3', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '14px', marginBottom: '8px' }}>SIGN-IN BUSY</div>
-          <div style={{ color: '#888', fontFamily: 'monospace', fontSize: '12px' }}>Too many wrong passwords from elsewhere this hour, so yours was not checked.</div>
-          <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px', marginTop: '6px' }}>Try again in {minutesLeft} min.</div>
+      <div className="gate-screen" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
+        <div className="gate-card" style={{ textAlign: 'center', padding: '40px', border: '1px solid #2a2a2a', borderRadius: '4px' }}>
+          <div className="gate-warn" style={{ color: '#fa3', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '14px', marginBottom: '8px' }}>SIGN-IN BUSY</div>
+          <div className="gate-dim" style={{ color: '#888', fontFamily: 'monospace', fontSize: '12px' }}>Too many wrong passwords from elsewhere this hour, so yours was not checked.</div>
+          <div className="gate-mute" style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px', marginTop: '6px' }}>Try again in {minutesLeft} min.</div>
         </div>
       </div>
     );
@@ -345,11 +347,11 @@ function App() {
   if (auth && auth.locked) {
     const hoursLeft = Math.ceil(((auth.lockUntil ?? 0) - Date.now()) / 1000 / 60 / 60);
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
-        <div style={{ textAlign: 'center', padding: '40px', border: '1px solid #2a2a2a', borderRadius: '4px' }}>
-          <div style={{ color: '#f55', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '14px', marginBottom: '8px' }}>ACCESS LOCKED</div>
-          <div style={{ color: '#888', fontFamily: 'monospace', fontSize: '12px' }}>Too many incorrect attempts.</div>
-          <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px', marginTop: '6px' }}>Try again in {hoursLeft}h.</div>
+      <div className="gate-screen" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
+        <div className="gate-card" style={{ textAlign: 'center', padding: '40px', border: '1px solid #2a2a2a', borderRadius: '4px' }}>
+          <div className="gate-bad" style={{ color: '#f55', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '14px', marginBottom: '8px' }}>ACCESS LOCKED</div>
+          <div className="gate-dim" style={{ color: '#888', fontFamily: 'monospace', fontSize: '12px' }}>Too many incorrect attempts.</div>
+          <div className="gate-mute" style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px', marginTop: '6px' }}>Try again in {hoursLeft}h.</div>
         </div>
       </div>
     );
@@ -359,12 +361,12 @@ function App() {
   // never "Incorrect password", or a right password reads as a wrong one.
   if (auth && auth.unavailable) {
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
-        <div style={{ textAlign: 'center', padding: '40px', border: '1px solid #2a2a2a', borderRadius: '4px' }}>
-          <div style={{ color: '#fa3', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '14px', marginBottom: '8px' }}>SERVER UNAVAILABLE</div>
-          <div style={{ color: '#888', fontFamily: 'monospace', fontSize: '12px' }}>The server did not answer{auth.status ? ` (${auth.status})` : ''}, so the password was not checked.</div>
-          <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px', marginTop: '6px', marginBottom: '20px' }}>Try again in a minute.</div>
-          <button style={{ background: '#1e2d28', color: '#ccc', border: '1px solid #3a3a3a', padding: '8px 20px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px', borderRadius: '2px' }} onClick={() => { setAuth(undefined); setPwInput(null); }}>Try again</button>
+      <div className="gate-screen" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
+        <div className="gate-card" style={{ textAlign: 'center', padding: '40px', border: '1px solid #2a2a2a', borderRadius: '4px' }}>
+          <div className="gate-warn" style={{ color: '#fa3', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '14px', marginBottom: '8px' }}>SERVER UNAVAILABLE</div>
+          <div className="gate-dim" style={{ color: '#888', fontFamily: 'monospace', fontSize: '12px' }}>The server did not answer{auth.status ? ` (${auth.status})` : ''}, so the password was not checked.</div>
+          <div className="gate-mute" style={{ color: '#555', fontFamily: 'monospace', fontSize: '12px', marginTop: '6px', marginBottom: '20px' }}>Try again in a minute.</div>
+          <button className="gate-btn" style={{ background: '#1e2d28', color: '#ccc', border: '1px solid #3a3a3a', padding: '8px 20px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px', borderRadius: '2px' }} onClick={() => { setAuth(undefined); setPwInput(null); }}>Try again</button>
         </div>
       </div>
     );
@@ -372,11 +374,11 @@ function App() {
 
   if (!auth) {
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
-        <div style={{ textAlign: 'center', padding: '40px', border: '1px solid #2a2a2a', borderRadius: '4px' }}>
-          <div style={{ color: '#f55', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '14px', marginBottom: '8px' }}>ACCESS DENIED</div>
-          <div style={{ color: '#888', fontFamily: 'monospace', fontSize: '12px', marginBottom: '20px' }}>Incorrect password.</div>
-          <button style={{ background: '#1e2d28', color: '#ccc', border: '1px solid #3a3a3a', padding: '8px 20px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px', borderRadius: '2px' }} onClick={() => { setAuth(undefined); setPwInput(null); }}>Try again</button>
+      <div className="gate-screen" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
+        <div className="gate-card" style={{ textAlign: 'center', padding: '40px', border: '1px solid #2a2a2a', borderRadius: '4px' }}>
+          <div className="gate-bad" style={{ color: '#f55', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '14px', marginBottom: '8px' }}>ACCESS DENIED</div>
+          <div className="gate-dim" style={{ color: '#888', fontFamily: 'monospace', fontSize: '12px', marginBottom: '20px' }}>Incorrect password.</div>
+          <button className="gate-btn" style={{ background: '#1e2d28', color: '#ccc', border: '1px solid #3a3a3a', padding: '8px 20px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '12px', borderRadius: '2px' }} onClick={() => { setAuth(undefined); setPwInput(null); }}>Try again</button>
         </div>
       </div>
     );
@@ -1635,10 +1637,10 @@ function Board({ isReadOnly, agents = false }) {
 
   if (!portfolio || !shownPortfolio || !metrics) {
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
+      <div className="gate-screen" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#0c1310' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#aaa', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '12px', marginBottom: '8px' }}>LOADING…</div>
-          <div style={{ color: '#555', fontFamily: 'monospace', fontSize: '11px' }}>Fetching board from cloud.</div>
+          <div className="gate-hi" style={{ color: '#aaa', fontFamily: 'monospace', letterSpacing: '0.2em', fontSize: '12px', marginBottom: '8px' }}>LOADING…</div>
+          <div className="gate-mute" style={{ color: '#555', fontFamily: 'monospace', fontSize: '11px' }}>Fetching board from cloud.</div>
         </div>
       </div>
     );

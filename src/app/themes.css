@@ -1,0 +1,311 @@
+/* DAY-MODE (2026-11-25; Davies: "I want a day mode for the website ... several different designs for me to choose
+   from"): four light themes, each nothing but values for the tokens `styles.css` defines, chosen by `data-theme` on
+   <html> (`app/theme.js`). No attribute is the dark theme, which this file does not touch: every selector here needs
+   the attribute. The choice among the four is Davies'; to drop one, delete its block here and in `agents/agents.css`
+   and its entry in `app/theme.js` (`app/themes.test.js` fails until the three agree). The test also holds each theme's
+   text and figures to their contrast on its page and its panels. */
+
+/* ---- Chalk Paper ---- */
+:root[data-theme="paper"] {
+  color-scheme: light;
+  --bg: #f5f1e6;
+  --bg-2: #faf7ef;
+  --bg-rgb: 245, 241, 230;
+  --bg-glow: #fbf8f0;
+  --surface: #faf7ef;
+  --surface-ring: #faf7ef;
+  --chalk: #14201b;
+  --chalk-rgb: 20, 32, 27;
+  --chalk-dim: rgb(20 32 27 / 0.68);
+  --chalk-mute: rgb(20 32 27 / 0.52);
+  --chalk-hi: #000;
+  --line: rgb(20 32 27 / 0.16);
+  --line-2: rgb(20 32 27 / 0.09);
+  --panel: rgb(20 32 27 / 0.035);
+  --panel-hi: rgb(20 32 27 / 0.07);
+  --gain: #026940;
+  --gain-dim: rgb(2 105 64 / 0.14);
+  --gain-wash: rgb(2 105 64 / 0.09);
+  --loss: #b71824;
+  --loss-dim: rgb(183 24 36 / 0.14);
+  --loss-wash: rgb(183 24 36 / 0.09);
+  --gold: #7a5103;
+  --hot: #7a5103;
+  --txn-div-dim: rgb(122 81 3 / 0.16);
+  --role-def: #1c7592;
+  --role-mid: #2c7f4a;
+  --role-fwd: #b8501c;
+  --role-gk: #5d6088;
+  --hi-rgb: 20, 32, 27;
+  --shade-18: rgb(20 32 27 / 0.0288);
+  --shade-22: rgb(20 32 27 / 0.0352);
+  --shade-25: rgb(20 32 27 / 0.04);
+  --shade-30: rgb(20 32 27 / 0.048);
+  --shade-35: rgb(20 32 27 / 0.056);
+  --shade-40: rgb(20 32 27 / 0.064);
+  --shade-50: rgb(20 32 27 / 0.08);
+  --shade-55: rgb(20 32 27 / 0.088);
+  --shade-60: rgb(20 32 27 / 0.096);
+  --shade-70: rgb(20 32 27 / 0.112);
+  --gold-wash: rgb(122 81 3 / 0.14);
+  --gold-glow: rgb(122 81 3 / 0.18);
+  --gold-tint: rgb(122 81 3 / 0.06);
+  --gain-edge: rgb(2 105 64 / 0.4);
+  --scrim-rgb: 245, 241, 230;
+  --on-accent: #faf7ef;
+  --on-gold: #faf7ef;
+  --link: #1f62b0;
+  --backdrop: rgb(20 32 27 / 0.42);
+  --tip-bg: #faf7ef;
+  --chart-ref: #646a62;
+  --chart-ref-2: #58708c;
+  --chip-gain: #026940;
+  --chip-loss: #b71824;
+  --chip-ref: #646a62;
+  --chip-ink: #fff;
+  --hm-flat-1: #e2ded2;
+  --hm-flat-2: #d9d5c8;
+  --sess-after: #7a3fd1;
+  --sess-night: #3f55a8;
+  --icon-wash: brightness(0) opacity(0.68);
+  --pitch: #10241c;
+  --pitch-2: rgb(20 32 27 / 0.045);
+  --pitch-line-rgb: 244, 239, 227;
+}
+:root[data-theme="paper"] .pitch-legend .legend-sw { --gold: #eebc4a; --gain: #56d57b; --loss: #ff5f5b; }
+/* The tactics board stays a chalkboard: inside it the dark theme's values hold. */
+:root[data-theme="paper"] .pitch {
+  --bg: #0c1310; --bg-rgb: 12, 19, 16; --chalk: #f4efe3; --chalk-rgb: 244, 239, 227; --chalk-dim: rgba(244,239,227,0.5); --chalk-mute: rgba(244,239,227,0.25);
+  --line: rgba(244,239,227,0.14); --line-2: rgba(244,239,227,0.08); --panel: rgba(244,239,227,0.035); --panel-hi: rgba(244,239,227,0.06);
+  --gain: #56d57b; --gain-dim: rgb(86 213 123 / 0.2); --loss: #ff5f5b; --loss-dim: rgb(255 95 91 / 0.2); --gold: #eebc4a; --hot: #eebc4a;
+  --role-def: #4aadc9; --role-mid: #73c385; --role-fwd: #ff9064; --role-gk: #9fa2be;
+  --hi-rgb: 255, 255, 255; --on-accent: #0c1310;
+  --shade-18: rgba(0,0,0,0.18); --shade-22: rgba(0,0,0,0.22); --shade-25: rgba(0,0,0,0.25); --shade-30: rgba(0,0,0,0.3); --shade-35: rgba(0,0,0,0.35); --shade-40: rgba(0,0,0,0.4); --shade-50: rgba(0,0,0,0.5); --shade-55: rgba(0,0,0,0.55); --shade-60: rgba(0,0,0,0.6); --shade-70: rgba(0,0,0,0.7);
+  --gold-glow: rgb(238 188 74 / 0.18); --tip-bg: rgba(0,0,0,0.85); --pitch-2: #0c1d16;
+  color: var(--chalk);
+}
+
+/* ---- Daylight ---- */
+:root[data-theme="daylight"] {
+  color-scheme: light;
+  --bg: #f1f4f2;
+  --bg-2: #ffffff;
+  --bg-rgb: 241, 244, 242;
+  --bg-glow: #f7f9f7;
+  --surface: #ffffff;
+  --surface-ring: #ffffff;
+  --chalk: #111a16;
+  --chalk-rgb: 17, 26, 22;
+  --chalk-dim: rgb(17 26 22 / 0.66);
+  --chalk-mute: rgb(17 26 22 / 0.5);
+  --chalk-hi: #000;
+  --line: rgb(17 26 22 / 0.14);
+  --line-2: rgb(17 26 22 / 0.08);
+  --panel: #ffffff;
+  --panel-hi: #f6f8f6;
+  --gain: #016f3e;
+  --gain-dim: rgb(1 111 62 / 0.14);
+  --gain-wash: rgb(1 111 62 / 0.09);
+  --loss: #be0119;
+  --loss-dim: rgb(190 1 25 / 0.14);
+  --loss-wash: rgb(190 1 25 / 0.09);
+  --gold: #7c5503;
+  --hot: #7c5503;
+  --txn-div-dim: rgb(124 85 3 / 0.16);
+  --role-def: #1c7592;
+  --role-mid: #2c7f4a;
+  --role-fwd: #b8501c;
+  --role-gk: #5d6088;
+  --hi-rgb: 17, 26, 22;
+  --shade-18: rgb(17 26 22 / 0.0252);
+  --shade-22: rgb(17 26 22 / 0.0308);
+  --shade-25: rgb(17 26 22 / 0.035);
+  --shade-30: rgb(17 26 22 / 0.042);
+  --shade-35: rgb(17 26 22 / 0.049);
+  --shade-40: rgb(17 26 22 / 0.056);
+  --shade-50: rgb(17 26 22 / 0.07);
+  --shade-55: rgb(17 26 22 / 0.077);
+  --shade-60: rgb(17 26 22 / 0.084);
+  --shade-70: rgb(17 26 22 / 0.098);
+  --gold-wash: rgb(124 85 3 / 0.14);
+  --gold-glow: rgb(124 85 3 / 0.18);
+  --gold-tint: rgb(124 85 3 / 0.06);
+  --gain-edge: rgb(1 111 62 / 0.4);
+  --scrim-rgb: 241, 244, 242;
+  --on-accent: #ffffff;
+  --on-gold: #ffffff;
+  --link: #1f62b0;
+  --backdrop: rgb(17 26 22 / 0.42);
+  --tip-bg: #ffffff;
+  --chart-ref: #5f6b66;
+  --chart-ref-2: #4f6f96;
+  --chip-gain: #016f3e;
+  --chip-loss: #be0119;
+  --chip-ref: #5f6b66;
+  --chip-ink: #fff;
+  --hm-flat-1: #e4e8e4;
+  --hm-flat-2: #dadfda;
+  --sess-after: #7a3fd1;
+  --sess-night: #3f55a8;
+  --icon-wash: brightness(0) opacity(0.66);
+  --pitch: #d5e6d7;
+  --pitch-2: #c9dccc;
+  --pitch-line-rgb: 31, 77, 54;
+}
+:root[data-theme="daylight"] :is(.mc-card, .player-card, .lot-summary, .txn-realized, .live-pill, .ro-badge) { background: var(--panel); }
+:root[data-theme="daylight"] :is(.panel, .mc-card, .scoreboard) { box-shadow: 0 1px 2px rgb(17 26 22 / 0.05), 0 2px 8px rgb(17 26 22 / 0.04); }
+:root[data-theme="daylight"] .scoreboard { background: #ffffff; }
+
+/* ---- Sage ---- */
+:root[data-theme="sage"] {
+  color-scheme: light;
+  --bg: #e5ece6;
+  --bg-2: #f0f4f0;
+  --bg-rgb: 229, 236, 230;
+  --bg-glow: #edf2ed;
+  --surface: #f0f4f0;
+  --surface-ring: #f0f4f0;
+  --chalk: #12201a;
+  --chalk-rgb: 18, 32, 26;
+  --chalk-dim: rgb(18 32 26 / 0.7);
+  --chalk-mute: rgb(18 32 26 / 0.54);
+  --chalk-hi: #000;
+  --line: rgb(18 32 26 / 0.15);
+  --line-2: rgb(18 32 26 / 0.085);
+  --panel: rgb(255 255 255 / 0.5);
+  --panel-hi: rgb(255 255 255 / 0.78);
+  --gain: #035f3d;
+  --gain-dim: rgb(3 95 61 / 0.14);
+  --gain-wash: rgb(3 95 61 / 0.09);
+  --loss: #a32226;
+  --loss-dim: rgb(163 34 38 / 0.14);
+  --loss-wash: rgb(163 34 38 / 0.09);
+  --gold: #6d4b04;
+  --hot: #6d4b04;
+  --txn-div-dim: rgb(109 75 4 / 0.16);
+  --role-def: #1b6c87;
+  --role-mid: #2a7545;
+  --role-fwd: #a9491a;
+  --role-gk: #55587e;
+  --hi-rgb: 18, 32, 26;
+  --shade-18: rgb(18 32 26 / 0.027);
+  --shade-22: rgb(18 32 26 / 0.033);
+  --shade-25: rgb(18 32 26 / 0.0375);
+  --shade-30: rgb(18 32 26 / 0.045);
+  --shade-35: rgb(18 32 26 / 0.0525);
+  --shade-40: rgb(18 32 26 / 0.06);
+  --shade-50: rgb(18 32 26 / 0.075);
+  --shade-55: rgb(18 32 26 / 0.0825);
+  --shade-60: rgb(18 32 26 / 0.09);
+  --shade-70: rgb(18 32 26 / 0.105);
+  --gold-wash: rgb(109 75 4 / 0.14);
+  --gold-glow: rgb(109 75 4 / 0.18);
+  --gold-tint: rgb(109 75 4 / 0.06);
+  --gain-edge: rgb(3 95 61 / 0.4);
+  --scrim-rgb: 229, 236, 230;
+  --on-accent: #f0f4f0;
+  --on-gold: #f0f4f0;
+  --link: #1b5aa3;
+  --backdrop: rgb(18 32 26 / 0.42);
+  --tip-bg: #f0f4f0;
+  --chart-ref: #56625c;
+  --chart-ref-2: #4a6685;
+  --chip-gain: #035f3d;
+  --chip-loss: #a32226;
+  --chip-ref: #56625c;
+  --chip-ink: #fff;
+  --hm-flat-1: #d4dcd5;
+  --hm-flat-2: #cad3cb;
+  --sess-after: #6d36bf;
+  --sess-night: #38509c;
+  --icon-wash: brightness(0) opacity(0.7);
+  --pitch: #c5dac9;
+  --pitch-2: #b9d0be;
+  --pitch-line-rgb: 28, 70, 49;
+}
+:root[data-theme="sage"] :is(.mc-card, .player-card, .lot-summary, .txn-realized, .live-pill, .ro-badge) { background: var(--panel); }
+
+/* ---- Ink ---- */
+:root[data-theme="ink"] {
+  color-scheme: light;
+  --bg: #fbfaf5;
+  --bg-2: #ffffff;
+  --bg-rgb: 251, 250, 245;
+  --bg-glow: #fdfdfa;
+  --surface: #ffffff;
+  --surface-ring: #ffffff;
+  --chalk: #0a100d;
+  --chalk-rgb: 10, 16, 13;
+  --chalk-dim: rgb(10 16 13 / 0.74);
+  --chalk-mute: rgb(10 16 13 / 0.6);
+  --chalk-hi: #000;
+  --line: rgb(10 16 13 / 0.24);
+  --line-2: rgb(10 16 13 / 0.13);
+  --panel: transparent;
+  --panel-hi: rgb(10 16 13 / 0.05);
+  --gain: #035634;
+  --gain-dim: rgb(3 86 52 / 0.14);
+  --gain-wash: rgb(3 86 52 / 0.09);
+  --loss: #9e0117;
+  --loss-dim: rgb(158 1 23 / 0.14);
+  --loss-wash: rgb(158 1 23 / 0.09);
+  --gold: #654203;
+  --hot: #654203;
+  --txn-div-dim: rgb(101 66 3 / 0.16);
+  --role-def: #155f78;
+  --role-mid: #226a3c;
+  --role-fwd: #96400f;
+  --role-gk: #4b4e72;
+  --hi-rgb: 10, 16, 13;
+  --shade-18: rgb(10 16 13 / 0.0216);
+  --shade-22: rgb(10 16 13 / 0.0264);
+  --shade-25: rgb(10 16 13 / 0.03);
+  --shade-30: rgb(10 16 13 / 0.036);
+  --shade-35: rgb(10 16 13 / 0.042);
+  --shade-40: rgb(10 16 13 / 0.048);
+  --shade-50: rgb(10 16 13 / 0.06);
+  --shade-55: rgb(10 16 13 / 0.066);
+  --shade-60: rgb(10 16 13 / 0.072);
+  --shade-70: rgb(10 16 13 / 0.084);
+  --gold-wash: rgb(101 66 3 / 0.14);
+  --gold-glow: rgb(101 66 3 / 0.18);
+  --gold-tint: rgb(101 66 3 / 0.06);
+  --gain-edge: rgb(3 86 52 / 0.4);
+  --scrim-rgb: 251, 250, 245;
+  --on-accent: #ffffff;
+  --on-gold: #ffffff;
+  --link: #174f96;
+  --backdrop: rgb(10 16 13 / 0.42);
+  --tip-bg: #ffffff;
+  --chart-ref: #4c5650;
+  --chart-ref-2: #3f5b7d;
+  --chip-gain: #035634;
+  --chip-loss: #9e0117;
+  --chip-ref: #4c5650;
+  --chip-ink: #fff;
+  --hm-flat-1: #e6e7e1;
+  --hm-flat-2: #dddfd8;
+  --sess-after: #5f2bb0;
+  --sess-night: #30468c;
+  --icon-wash: brightness(0) opacity(0.74);
+  --pitch: #dbe8dc;
+  --pitch-2: #d0dfd2;
+  --pitch-line-rgb: 20, 56, 38;
+}
+
+/* What every light theme shares. The screens before the board (the password, LOADING, the refusals: app/app.jsx)
+   are drawn in the dark theme's colours by their own inline styles, which stay as they are; under a light theme each
+   element's class takes the theme's instead, so a light page does not open on a dark screen. */
+:root[data-theme] .gate-screen { background: var(--bg) !important; }
+:root[data-theme] .gate-card { border-color: var(--line) !important; }
+:root[data-theme] .gate-hi { color: var(--chalk) !important; }
+:root[data-theme] .gate-dim { color: var(--chalk-dim) !important; }
+:root[data-theme] .gate-mute { color: var(--chalk-mute) !important; }
+:root[data-theme] .gate-warn { color: var(--gold) !important; }
+:root[data-theme] .gate-bad { color: var(--loss) !important; }
+:root[data-theme] .gate-inp { background: var(--surface) !important; color: var(--chalk) !important; border-color: var(--line) !important; }
+:root[data-theme] .gate-btn { background: var(--panel-hi) !important; color: var(--chalk) !important; border-color: var(--line) !important; }
+:root[data-theme] .gate-btn:disabled { color: var(--chalk-mute) !important; }
+/* The heat map's hover darkens, where the night's lightens. */
+:root[data-theme] .hm-tile:hover { filter: brightness(0.94); }
+:root[data-theme] .legend-sw.sw-ball { border-color: var(--chalk-mute); }

@@ -46,8 +46,8 @@ import { COMPANY_NAMES } from '../tables/company_names.js';
 // loss red price line (Davies, 2026-10-16: "浅灰蓝色，不要太亮"). Contrast
 // on the page's #0c1310: 6.7:1 against the main grey's 3.9:1, and 1.7:1
 // between the two lines. The site has one dark theme, so one literal serves.
-const MA2_COLOR = '#8b9bb4';
-const MA_COLOR = '#6b7280';
+const MA2_COLOR = 'var(--chart-ref-2)';
+const MA_COLOR = 'var(--chart-ref)';
 // Least pixel distance between the two right-margin MA labels.
 const MA_LABEL_GAP = 11;
 
@@ -630,7 +630,7 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
     if (cPctRectRef.current) {
       cPctRectRef.current.setAttribute('x', String(x + 6));
       cPctRectRef.current.setAttribute('y', String(y - 16));
-      cPctRectRef.current.setAttribute('fill', pct >= 0 ? 'rgba(70,160,90,0.85)' : 'rgba(190,60,70,0.85)');
+      cPctRectRef.current.setAttribute('fill', pct >= 0 ? 'var(--chip-gain)' : 'var(--chip-loss)');
     }
     if (cPctTextRef.current) {
       cPctTextRef.current.setAttribute('x', String(x + 34));
@@ -934,7 +934,7 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
                   <line x1={padL} y1={yOf(v).toFixed(1)} x2={W - padR} y2={yOf(v).toFixed(1)}
                         stroke="var(--line-2)" strokeWidth="0.5" strokeDasharray="2,3" />
                   <text x={padL - 6} y={yOf(v).toFixed(1)} textAnchor="end" dominantBaseline="middle"
-                        fontSize="9.5" fill="rgba(244,239,227,0.55)" fontFamily="var(--font-mono)">
+                        fontSize="9.5" fill="rgba(var(--chalk-rgb), 0.55)" fontFamily="var(--font-mono)">
                     {isRatioRange ? v.toFixed(2) : fmtTickerPrice(v, ticker, sym)}
                   </text>
                 </g>
@@ -944,7 +944,7 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
               {ticksX.map((tk, i) => (
                 <text key={`x${i}`} x={tk.x} y={H - padB + 14}
                       textAnchor={i === 0 ? 'start' : (i === ticksX.length - 1 ? 'end' : 'middle')}
-                      fontSize="9.5" fill="rgba(244,239,227,0.55)" fontFamily="var(--font-mono)">
+                      fontSize="9.5" fill="rgba(var(--chalk-rgb), 0.55)" fontFamily="var(--font-mono)">
                   {fmtAxisDate(tk.date)}
                 </text>
               ))}
@@ -964,9 +964,9 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
                 return (
                   <g>
                     <line x1={padL} y1={y.toFixed(1)} x2={W - padR} y2={y.toFixed(1)}
-                          stroke="rgba(244,239,227,0.55)" strokeWidth="0.8" strokeDasharray="4,3" />
+                          stroke="rgba(var(--chalk-rgb), 0.55)" strokeWidth="0.8" strokeDasharray="4,3" />
                     <text x={W - padR + 4} y={y.toFixed(1)} textAnchor="start" dominantBaseline="middle"
-                          fontSize="9" fill="rgba(244,239,227,0.7)" fontFamily="var(--font-mono)">
+                          fontSize="9" fill="rgba(var(--chalk-rgb), 0.7)" fontFamily="var(--font-mono)">
                       3Y AVG {avg.toFixed(2)}
                     </text>
                   </g>
@@ -991,13 +991,13 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
                   stays on top. Same gray + label-in-right-margin
                   treatment as the MA overlays on other ranges. */}
               {vwapPath && (
-                <path d={vwapPath} fill="none" stroke="#6b7280" strokeWidth="1.0"
+                <path d={vwapPath} fill="none" stroke="var(--chart-ref)" strokeWidth="1.0"
                       strokeLinejoin="round" strokeLinecap="round" opacity="0.85" />
               )}
               {vwapLastValue != null && (
                 <text x={rightLabelX} y={yOf(vwapLastValue).toFixed(1)}
                       textAnchor="start" dominantBaseline="middle"
-                      fontSize="9" fill="rgba(244,239,227,0.7)" fontFamily="var(--font-mono)">
+                      fontSize="9" fill="rgba(var(--chalk-rgb), 0.7)" fontFamily="var(--font-mono)">
                   VWAP
                 </text>
               )}
@@ -1014,7 +1014,7 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
               {maLastValue != null && maLabelY != null && (
                 <text x={rightLabelX} y={maLabelY.toFixed(1)}
                       textAnchor="start" dominantBaseline="middle"
-                      fontSize="9" fill="rgba(244,239,227,0.7)" fontFamily="var(--font-mono)">
+                      fontSize="9" fill="rgba(var(--chalk-rgb), 0.7)" fontFamily="var(--font-mono)">
                   MA {MA_DAYS}
                 </text>
               )}
@@ -1044,7 +1044,7 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
               {points.length > 0 && !overnightDot && (() => {
                 const last = points[points.length - 1];
                 return <circle cx={xOfIdx(points.length - 1).toFixed(1)} cy={yOf(last.close).toFixed(1)}
-                               r="3" fill={lineColor} stroke="#0c1310" strokeWidth="1.5" />;
+                               r="3" fill={lineColor} stroke="var(--surface-ring)" strokeWidth="1.5" />;
               })()}
               {/* Overnight live dot — the T212 "night market" price as a
                   pulsing heartbeat at the far-right (true-time) position,
@@ -1059,7 +1059,7 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
                       <animate attributeName="r" values="3.5;9;3.5" dur="1.6s" repeatCount="indefinite" />
                       <animate attributeName="opacity" values="0.7;0;0.7" dur="1.6s" repeatCount="indefinite" />
                     </circle>
-                    <circle cx={dx} cy={dy} r="3" fill={lineColor} stroke="#0c1310" strokeWidth="1.2" />
+                    <circle cx={dx} cy={dy} r="3" fill={lineColor} stroke="var(--surface-ring)" strokeWidth="1.2" />
                   </g>
                 );
               })()}
@@ -1069,23 +1069,23 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
                   axes) doesn't reconcile every frame. */}
               <g ref={crossRef} style={{ display: 'none' }}>
                 <line ref={cVlineRef} x1={padL} y1={padT} x2={padL} y2={H - padB}
-                      stroke="rgba(244,239,227,0.5)" strokeWidth="0.7" strokeDasharray="3,3" />
+                      stroke="rgba(var(--chalk-rgb), 0.5)" strokeWidth="0.7" strokeDasharray="3,3" />
                 <line ref={cHlineRef} x1={padL} y1={padT} x2={W - padR} y2={padT}
-                      stroke="rgba(244,239,227,0.5)" strokeWidth="0.7" strokeDasharray="3,3" />
+                      stroke="rgba(var(--chalk-rgb), 0.5)" strokeWidth="0.7" strokeDasharray="3,3" />
                 <rect ref={cXRectRef} x={padL} y={H - padB + 1} width={xRectWidth} height={18}
-                      fill="#0c1310" stroke="var(--chalk-dim)" />
+                      fill="var(--surface-ring)" stroke="var(--chalk-dim)" />
                 <text ref={cXTextRef} x={padL} y={H - padB + 13} textAnchor="middle"
                       fontSize="9.5" fill="var(--chalk)" fontFamily="var(--font-mono)" />
                 <rect ref={cYRectRef} x={padL - 56} y={padT} width={52} height={18}
-                      fill="#0c1310" stroke="var(--chalk-dim)" />
+                      fill="var(--surface-ring)" stroke="var(--chalk-dim)" />
                 <text ref={cYTextRef} x={padL - 6} y={padT} textAnchor="end" dominantBaseline="middle"
                       fontSize="9.5" fill="var(--chalk)" fontFamily="var(--font-mono)" />
                 <circle ref={cDotRef} cx={padL} cy={padT} r="3.5"
-                        fill="var(--gain)" stroke="#0c1310" strokeWidth="1.5" />
+                        fill="var(--gain)" stroke="var(--surface-ring)" strokeWidth="1.5" />
                 <rect ref={cPctRectRef} x={padL} y={padT} width={56} height={16} rx={2}
-                      fill="rgba(70,160,90,0.85)" />
+                      fill="var(--chip-gain)" />
                 <text ref={cPctTextRef} x={padL} y={padT} textAnchor="middle"
-                      fontSize="10" fill="#fff" fontFamily="var(--font-mono)" fontWeight="600" />
+                      fontSize="10" fill="var(--chip-ink)" fontFamily="var(--font-mono)" fontWeight="600" />
               </g>
             </svg>
           )}

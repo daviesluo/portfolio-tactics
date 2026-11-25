@@ -335,7 +335,7 @@ export function treemap(nodes, x, y, w, h, column = false) {
 function tileStyle(pct) {
   if (pctIsFlat(pct)) {
     return {
-      bg: 'linear-gradient(180deg, rgb(34,40,38) 0%, rgb(26,32,30) 100%)',
+      bg: 'linear-gradient(180deg, var(--hm-flat-1) 0%, var(--hm-flat-2) 100%)',
       tickerClr: 'var(--chalk-dim)',
       pctClr: 'var(--chalk-dim)',
     };

@@ -155,25 +155,25 @@ function PitchLines() {
           <feDisplacementMap in="SourceGraphic" scale="1.2" />
         </filter>
       </defs>
-      <g stroke="rgba(244,239,227,0.55)" strokeWidth="2" fill="none" filter="url(#chalk)">
+      <g stroke="rgba(var(--pitch-line-rgb), 0.55)" strokeWidth="2" fill="none" filter="url(#chalk)">
         {/* Outer boundary */}
         <rect x="40" y="40" width="920" height="1420" />
         {/* Halfway line */}
         <line x1="40" y1="750" x2="960" y2="750" />
         {/* Center circle + spot */}
         <circle cx="500" cy="750" r="110" />
-        <circle cx="500" cy="750" r="4" fill="rgba(244,239,227,0.7)" />
+        <circle cx="500" cy="750" r="4" fill="rgba(var(--pitch-line-rgb), 0.7)" />
         {/* Top penalty area (opponent) */}
         <rect x="220" y="40" width="560" height="200" />
         <rect x="360" y="40" width="280" height="80" />
         {/* Top penalty arc */}
         <path d="M 410 240 A 110 110 0 0 0 590 240" />
-        <circle cx="500" cy="175" r="3" fill="rgba(244,239,227,0.7)" />
+        <circle cx="500" cy="175" r="3" fill="rgba(var(--pitch-line-rgb), 0.7)" />
         {/* Bottom penalty area (home) */}
         <rect x="220" y="1260" width="560" height="200" />
         <rect x="360" y="1380" width="280" height="80" />
         <path d="M 410 1260 A 110 110 0 0 1 590 1260" />
-        <circle cx="500" cy="1325" r="3" fill="rgba(244,239,227,0.7)" />
+        <circle cx="500" cy="1325" r="3" fill="rgba(var(--pitch-line-rgb), 0.7)" />
         {/* Corner arcs */}
         <path d="M 40 60 A 20 20 0 0 1 60 40" />
         <path d="M 960 60 A 20 20 0 0 0 940 40" />

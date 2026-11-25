@@ -5,7 +5,10 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import './fonts.css';
 import './styles.css';
+// DAY-MODE: the light themes, as values of the tokens the sheet above defines.
+import './themes.css';
 import App from './app.jsx';
+import { applyStoredTheme, watchSystemTheme } from './theme_pref.js';
 import { reportError } from './ops_error.js';
 import { healRejection } from './chunk_recovery.js';
 
@@ -28,6 +31,12 @@ if (typeof window !== 'undefined') {
     }).catch(() => reportError('promise.unhandled', { message: msg }));
   });
 }
+
+// DAY-MODE: the theme was drawn before the first paint by the build's own script (app/theme_build.js); drawing the
+// stored choice again here costs nothing and covers a visit on which that script did not arrive. Then the page
+// follows the device while the choice is Auto.
+applyStoredTheme();
+watchSystemTheme();
 
 createRoot(/** @type {HTMLElement} */ (document.getElementById('root'))).render(
   // StrictMode double-renders effects in dev to surface missing-cleanup
