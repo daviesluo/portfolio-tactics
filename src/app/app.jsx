@@ -201,7 +201,7 @@ const EXT_SERIES_TTL_MS = 2 * 60 * 1000;
 // holding currency→USD conversion (not shown in the market-conditions
 // column). GBPUSD=X doubles as both a displayed card and the rate we use
 // to convert GBP holdings to USD.
-const MC_TICKERS = ["^GSPC", "^NDX", "^RUT", "^SOX", "^VIX", "BZ=F", "^TNX", "GBPUSD=X", "GBPCNY=X", "USDCNY=X", "USDHKD=X", "EURUSD=X", "ES=F", "NQ=F", "RTY=F"];
+const MC_TICKERS = ["^GSPC", "^NDX", "BTC-USD", "^SOX", "^VIX", "BZ=F", "^TNX", "GBPUSD=X", "GBPCNY=X", "USDCNY=X", "USDHKD=X", "EURUSD=X", "ES=F", "NQ=F"];
 // sessionStorage key for the pending-save draft mirror. Per-tab
 // (sessionStorage, not localStorage) so two tabs can't replay each
 // other's drafts; survives reload-in-same-tab (which is what a
@@ -209,13 +209,13 @@ const MC_TICKERS = ["^GSPC", "^NDX", "^RUT", "^SOX", "^VIX", "BZ=F", "^TNX", "GB
 const PENDING_SAVE_KEY = 'dp.pendingSave';
 
 // MC symbols whose CARDS are clickable. The futures alternates
-// (ES=F / NQ=F / RTY=F) only appear on the card face during
+// (ES=F / NQ=F) only appear on the card face during
 // ext-hours, but `<MarketConditions>`'s `onCardClick` passes
 // the ACTIVE ticker (= futures during ext-on for indices that
 // have a futures alt), so prefetch needs to warm both canonical
 // and futures tickers — otherwise clicking ^GSPC card in ext
 // mode opens an ES=F chart whose cache is cold.
-const MC_PREFETCH_TICKERS = ["^GSPC", "^NDX", "^RUT", "^SOX", "^VIX", "BZ=F", "^TNX", "GBPUSD=X", "GBPCNY=X", "USDCNY=X", "USDHKD=X", "EURUSD=X", "ES=F", "NQ=F", "RTY=F"];
+const MC_PREFETCH_TICKERS = ["^GSPC", "^NDX", "BTC-USD", "^SOX", "^VIX", "BZ=F", "^TNX", "GBPUSD=X", "GBPCNY=X", "USDCNY=X", "USDHKD=X", "EURUSD=X", "ES=F", "NQ=F"];
 
 // Themed in-page password screen — replaces the old `window.prompt` over a
 // blank page (unstyled, off-theme, especially clunky in the iOS PWA). Same

@@ -882,20 +882,23 @@ function SidebarFoot({ source }) {
 
 // ---- Market Conditions column ----
 // Ten cards laid out as a 5-row × 2-column grid on desktop (column-major):
-//   col 1 → S&P 500, NASDAQ 100, Russell 2000, VIX
+//   col 1 → S&P 500, NASDAQ 100, PHLX SOX, Bitcoin, VIX
 //   col 2 → Brent Oil, US 10Y Treasury Yield, GBP/USD, GBP/CNY
 // Mobile keeps the previous 6-card layout (10Y + GBP/CNY hidden) so the
 // mobile MC strip stays compact. Cards flagged hideMobile carry the
 // `mc-hide-mobile` class which is display:none on the mobile breakpoint.
 const MC_INDICES = [
   // Mobile renders a 3 × 3 grid (one less card than desktop, SOX dropped)
-  // in the order GSPC / NDX / RUT — VIX / BZ=F / TNX — GBPUSD / GBPCNY /
+  // in the order GSPC / NDX / BTC — VIX / BZ=F / TNX — GBPUSD / GBPCNY /
   // USDCNY. The grid-auto-flow:row CSS on the mobile container means the
   // visible cards fill row-by-row in this array order.
   { ticker: "^GSPC",    name: "S&P 500",      nameB: "S&P",    nameN: "500",  ftTicker: "ES=F",  ftName: "S&P Futures"    },
   { ticker: "^NDX",     name: "NASDAQ 100",   nameB: "NASDAQ", nameN: "100",  ftTicker: "NQ=F",  ftName: "NQ Futures" },
-  { ticker: "^RUT",     name: "Russell 2000", nameB: "Russell",nameN: "2000", ftTicker: "RTY=F", ftName: "R2K Futures"    },
   { ticker: "^SOX",     name: "PHLX SOX",     nameB: "PHLX",   nameN: "SOX",  hideMobile: true },
+  // BTC-USD in Russell 2000's place (Davies, 2026-11-25: "R2K Futures RTY=F换成btc-usd", the whole card), after SOX on a
+  // computer ("电脑上版本和PHLX SOX对换位置，手机版不用": SOX is hidden on a phone, so the phone's order is unchanged). It trades
+  // round the clock, so it has no futures alternate and reads live at any hour.
+  { ticker: "BTC-USD",  name: "Bitcoin",      nameB: "BTC",    nameN: "USD"  },
   { ticker: "^VIX",     name: "VIX"          },
   { ticker: "BZ=F",     name: "Brent Oil"    },
   { ticker: "^TNX",     name: "US 10Y Yield", nameB: "US 10Y", nameN: "Yield" },
