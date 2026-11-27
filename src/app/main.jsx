@@ -10,7 +10,7 @@ import './themes.css';
 import App from './app.jsx';
 import { applyStoredTheme, watchSystemTheme } from './theme_pref.js';
 import { reportError } from './ops_error.js';
-import { healRejection } from './chunk_recovery.js';
+import { healRejection, installStylesheetRecovery } from './chunk_recovery.js';
 
 // Catch async failures the React ErrorBoundary can't see — unhandled
 // Promise rejections from `useEffect` fetches, JSON parse errors in
@@ -31,6 +31,10 @@ if (typeof window !== 'undefined') {
     }).catch(() => reportError('promise.unhandled', { message: msg }));
   });
 }
+
+// A lazy page's stylesheet that fails to load is asked for again on its own, so the page is never drawn without it
+// (chunk_recovery.js, 2026-11-27).
+if (typeof window !== 'undefined') installStylesheetRecovery(window);
 
 // DAY-MODE: the theme was drawn before the first paint by the build's own script (app/theme_build.js); drawing the
 // stored choice again here costs nothing and covers a visit on which that script did not arrive. Then the page

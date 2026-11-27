@@ -140,3 +140,73 @@ export function lazyPage(factory, pick) {
   Page.preload = () => factory().then(pick).then((m) => { loaded = m; }, () => {});
   return Page;
 }
+
+/**
+ * The stylesheet a page chunk brings, when its load fails once (2026-11-27, Davies' phone: "网站怎么成这样了", the Agents
+ * page drawn with no styles at all). Vite loads a lazy chunk's sheet as a `<link>` beside its code, and a failed sheet
+ * rejects the import after a `vite:preloadError` event. The app's warm-up after first paint (`lazyPage`'s `preload`)
+ * swallowed that rejection, and Vite's preloader then counts the sheet as loaded for good (its memo keeps the key once the
+ * load settles, whatever the outcome), so the click drew the page with its code and without its sheet until the next
+ * reload. One failure is enough: the gate answers 503 while it cannot check the session, and a phone drops requests.
+ *
+ * Here a sheet's failure is taken out of the import (`preventDefault`: the code is here, the page is drawn now) and the
+ * sheet is asked for again on its own, at 1, 3, 10, 30 and 60 s, the failed `<link>` replaced each time; after the last
+ * it is reported (`chunk.css`). A script's failure is left to the chunk recovery above.
+ */
+
+/** The sheet a Vite "Unable to preload CSS for <href>" error names, or null for any other error. @param {unknown} err */
+export function cssHrefFromError(err) {
+  const m = /Unable to preload CSS for (\S+)/.exec(String(/** @type {any} */ (err)?.message ?? err ?? ''));
+  return m ? m[1] : null;
+}
+
+/** The waits before each new ask for a sheet that failed. */
+export const CSS_RETRY_MS = [1000, 3000, 10_000, 30_000, 60_000];
+
+/**
+ * Asks for `href` again as a stylesheet, after each wait in `delays` until one loads, replacing the failed `<link>`.
+ * @param {string} href
+ * @param {{ doc?: Document, delays?: number[], setTimer?: (f: () => void, ms: number) => unknown, onDone?: (loaded: boolean) => void }} [o]
+ */
+export function reloadStylesheet(href, { doc = document, delays = CSS_RETRY_MS, setTimer = setTimeout, onDone = () => {} } = {}) {
+  let i = 0;
+  const attempt = () => {
+    for (const l of /** @type {NodeListOf<HTMLLinkElement>} */ (doc.querySelectorAll('link[rel="stylesheet"]'))) {
+      if (l.href === href) l.remove();
+    }
+    const link = doc.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.addEventListener('load', () => onDone(true), { once: true });
+    link.addEventListener('error', () => {
+      if (i < delays.length) setTimer(attempt, delays[i++]);
+      else onDone(false);
+    }, { once: true });
+    doc.head.appendChild(link);
+  };
+  setTimer(attempt, delays[i++] ?? 0);
+}
+
+/**
+ * Listens for Vite's preload failures on `win`: a sheet's is taken over (above), a script's left alone.
+ * @param {Window} [win]
+ * @param {{ delays?: number[], setTimer?: (f: () => void, ms: number) => unknown, report?: (kind: string, ctx: Record<string, unknown>) => void }} [deps]
+ */
+export function installStylesheetRecovery(win = window, deps = {}) {
+  const busy = new Set();
+  const report = deps.report ?? reportError;
+  win.addEventListener('vite:preloadError', (/** @type {any} */ e) => {
+    const href = cssHrefFromError(e?.payload);
+    if (!href) return;
+    e.preventDefault();
+    if (busy.has(href)) return;
+    busy.add(href);
+    reloadStylesheet(href, {
+      doc: win.document, delays: deps.delays, setTimer: deps.setTimer,
+      onDone: (loaded) => {
+        busy.delete(href);
+        if (!loaded) report('chunk.css', { message: `stylesheet did not load: ${href}` });
+      },
+    });
+  });
+}

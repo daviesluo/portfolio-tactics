@@ -2,7 +2,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render, act, cleanup } from '@testing-library/react';
-import { CHUNK_ERROR_RE, RECOVERY_KEY, chunkUrlFromError, healAndReload, healRejection, isChunkLoadError, lazyPage, shouldHeal } from './chunk_recovery.js';
+import { CHUNK_ERROR_RE, CSS_RETRY_MS, RECOVERY_KEY, chunkUrlFromError, cssHrefFromError, healAndReload, healRejection, installStylesheetRecovery, isChunkLoadError, lazyPage, shouldHeal } from './chunk_recovery.js';
 
 const mem = () => { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)) }; };
 
@@ -128,5 +128,67 @@ describe('lazyPage', () => {
   it('leaves a failed warm-up for the click: nothing is thrown and nothing reloads', async () => {
     const Page = lazyPage(() => Promise.reject(new TypeError('Failed to fetch dynamically imported module: /assets/x.js')), (m) => ({ default: m.Body }));
     await expect(Page.preload()).resolves.toBeUndefined();
+  });
+});
+
+describe('a page\'s stylesheet that fails to load (2026-11-27, the Agents page drawn unstyled)', () => {
+  const HREF = 'http://localhost/assets/agents-3a3923e0.css';
+  const fire = (payload) => {
+    const e = new Event('vite:preloadError', { cancelable: true });
+    /** @type {any} */ (e).payload = payload;
+    window.dispatchEvent(e);
+    return e;
+  };
+  const sheets = () => [...document.querySelectorAll('link[rel="stylesheet"]')].filter((l) => /** @type {HTMLLinkElement} */ (l).href === HREF);
+
+  it('names the sheet from Vite\'s words, and nothing for a script', () => {
+    expect(cssHrefFromError(new Error(`Unable to preload CSS for ${HREF}`))).toBe(HREF);
+    expect(cssHrefFromError(new Error('Failed to fetch dynamically imported module: http://localhost/assets/agents-x.js'))).toBeNull();
+    expect(cssHrefFromError(undefined)).toBeNull();
+  });
+
+  it('takes the failure out of the import, replaces the failed link and asks again until it loads; a script is left alone', () => {
+    const timers = [];
+    const report = vi.fn();
+    installStylesheetRecovery(window, { setTimer: (f, ms) => timers.push({ f, ms }), report });
+    const failed = document.createElement('link');
+    failed.rel = 'stylesheet';
+    failed.href = HREF;
+    document.head.appendChild(failed);
+
+    const script = fire(new Error('Failed to fetch dynamically imported module: http://localhost/assets/agents-x.js'));
+    expect(script.defaultPrevented).toBe(false);
+    expect(timers).toHaveLength(0);
+
+    const ev = fire(new Error(`Unable to preload CSS for ${HREF}`));
+    expect(ev.defaultPrevented).toBe(true);
+    expect(fire(new Error(`Unable to preload CSS for ${HREF}`)).defaultPrevented).toBe(true);
+    expect(timers.map((t) => t.ms)).toEqual([CSS_RETRY_MS[0]]);
+    timers.shift().f();
+    expect(sheets()).toHaveLength(1);
+    expect(sheets()[0]).not.toBe(failed);
+    sheets()[0].dispatchEvent(new Event('error'));
+    expect(timers.map((t) => t.ms)).toEqual([CSS_RETRY_MS[1]]);
+    timers.shift().f();
+    expect(sheets()).toHaveLength(1);
+    sheets()[0].dispatchEvent(new Event('load'));
+    expect(timers).toHaveLength(0);
+    expect(report).not.toHaveBeenCalled();
+    for (const l of sheets()) l.remove();
+  });
+
+  it('reports a sheet that never loads after its last wait', () => {
+    const timers = [];
+    const report = vi.fn();
+    const win = /** @type {any} */ (new EventTarget());
+    win.document = document;
+    installStylesheetRecovery(win, { setTimer: (f, ms) => timers.push({ f, ms }), report, delays: [1, 2] });
+    const e = new Event('vite:preloadError', { cancelable: true });
+    /** @type {any} */ (e).payload = new Error(`Unable to preload CSS for ${HREF}`);
+    win.dispatchEvent(e);
+    for (let n = 0; n < 2; n++) { timers.shift().f(); sheets()[0].dispatchEvent(new Event('error')); }
+    expect(timers).toHaveLength(0);
+    expect(report).toHaveBeenCalledWith('chunk.css', { message: `stylesheet did not load: ${HREF}` });
+    for (const l of sheets()) l.remove();
   });
 });
