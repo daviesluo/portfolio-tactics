@@ -146,7 +146,7 @@ import { ServiceWorkerBanner } from './sw-banner.jsx';
 import { reportError } from './ops_error.js';
 import { extPriceIsRealAh } from '../charts/indicators.js';
 import { isStrategyHolding, isUsEquity } from '../prices/ticker_class.js';
-import { fetchTrading212Holdings, fetchTrading212Orders, fetchTrading212Dividends, syncTrading212History, applyTrading212Answer, applyTrading212NightPrice, stripClosedFromPositions, heldAwaitingFills } from '../portfolio/trading212.js';
+import { fetchTrading212Holdings, fetchTrading212Orders, fetchTrading212Dividends, syncTrading212History, applyTrading212Answer, applyTrading212NightPrice, staleExtTickers, stripClosedFromPositions, heldAwaitingFills } from '../portfolio/trading212.js';
 import { applyFillLedgers, dividendEventsByTicker, fillCurrencyConflicts, withClosedFromFills, withDividendCosts } from '../portfolio/t212_fills.js';
 import { boardStrategiesOf, fetchBoardStrategies, preloadTickers, withBoardStrategies, withoutBoardStrategies } from '../portfolio/board_strategies.js';
 import { fetchOvernightSeries } from '../prices/overnight_intraday.js';
@@ -1211,6 +1211,12 @@ function Board({ isReadOnly, agents = false }) {
       // 20:00 ET reopen.
       const nightActive = refreshPhase === 'overnight' && !isWeekendDeadZone(new Date());
       applyTrading212NightPrice(next.holdings, t212Holdings?.prices, nightActive);
+      // Pre-market and after hours: a holding whose Yahoo bars stop before the session now running has an earlier session's
+      // print as its extended-hours price, so it takes Trading 212's instead (Davies, 2026-11-27, the day after Thanksgiving,
+      // when Yahoo served no pre-market bar at all: "主页数据有问题 怎么只显示到8点多了，而且还偏低"; `staleExtTickers`).
+      if (!nightActive) {
+        applyTrading212NightPrice(next.holdings, t212Holdings?.prices, staleExtTickers(extSeries, refreshPhase, new Date()));
+      }
       // Up/down flash — computed AFTER all overlays (Yahoo merge + both
       // T212 overlays) so a T212-priced allow-list ETF flashes on its real
       // broker-price move, not the spurious Yahoo-vs-T212 gap that comparing

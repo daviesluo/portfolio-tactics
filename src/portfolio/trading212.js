@@ -30,6 +30,7 @@
 import { EDGE_TRADING212_URL, SB_ANON } from '../app/supabase_config.js';
 import { getAppToken } from '../app/auth.js';
 import { hasOvernightSession } from '../prices/ticker_class.js';
+import { etMinuteOfDay } from '../prices/market_hours.js';
 import { detectCurrency } from './fx.js';
 
 /**
@@ -690,14 +691,21 @@ export function stripClosedFromPositions(portfolio) {
  * Call AFTER the Yahoo merge in doRefresh so `lastPrice` (today's RTH
  * close) is populated for the baseline.
  *
+ * `active` may instead be a set of tickers: the ones whose Yahoo extended-hours quote is older than the pre-market or
+ * after-hours session it would be shown in (`staleExtTickers`). Those take Trading 212's price outside the overnight
+ * too, and every other holding keeps Yahoo's.
+ *
  * @param {Record<string, any>} holdings  live portfolio map (mutated)
  * @param {Record<string, number> | null | undefined} prices  the `prices` map from fetchTrading212Holdings
- * @param {boolean} active  true only during the overnight window with ext toggle on
+ * @param {boolean | Set<string>} active  true during the overnight window; a set: those tickers alone
  * @returns {Record<string, any>}
  */
 export function applyTrading212NightPrice(holdings, prices, active) {
   if (!active || !prices || !holdings) return holdings;
+  const only = active instanceof Set ? active : null;
+  if (only && only.size === 0) return holdings;
   for (const [t, price] of Object.entries(prices)) {
+    if (only && !only.has(t)) continue;
     if (!holdings[t]) continue;          // portfolio ∩ T212 only
     if (!hasOvernightSession(t)) continue; // US equities WITH a night session (LSE ETFs + OTC ADRs like NSRGY excluded)
     if (typeof price !== 'number' || price <= 0) continue;
@@ -712,4 +720,34 @@ export function applyTrading212NightPrice(holdings, prices, active) {
     };
   }
   return holdings;
+}
+
+/** How long after a pre-market or after-hours session opens Yahoo gets before a series with no bar in it counts as stale. */
+const EXT_STALE_GRACE_MS = 15 * 60_000;
+
+/**
+ * The tickers whose Yahoo extended-hours series has no bar since the session now running began: pre-market from 04:00 ET,
+ * after hours from 16:00 ET, each given 15 minutes. Their extended-hours price is then an earlier session's last print
+ * (the day after Thanksgiving 2026, Wednesday's after-hours close for every ticker until the open), and the caller takes
+ * Trading 212's price for them instead (`applyTrading212NightPrice`). A series that did not come back says nothing.
+ * @param {Record<string, Array<{ date?: string }>> | null | undefined} extSeries  the refresh's 5-minute bars by ticker
+ * @param {string} phase  `usMarketPhase`
+ * @param {Date} [now]
+ * @returns {Set<string>}
+ */
+export function staleExtTickers(extSeries, phase, now = new Date()) {
+  /** @type {Set<string>} */
+  const out = new Set();
+  if (!extSeries || (phase !== 'premarket' && phase !== 'afterhours')) return out;
+  const sinceMin = etMinuteOfDay(now) - (phase === 'premarket' ? 240 : 960);
+  const startMs = Math.floor(now.getTime() / 60_000) * 60_000 - sinceMin * 60_000;
+  if (now.getTime() - startMs < EXT_STALE_GRACE_MS) return out;
+  for (const [t, ser] of Object.entries(extSeries)) {
+    if (!Array.isArray(ser) || ser.length === 0) continue;
+    const d = ser[ser.length - 1]?.date;
+    if (typeof d !== 'string') continue;
+    const ms = Date.parse(d.length === 16 && d[10] === 'T' ? `${d}Z` : d);
+    if (Number.isFinite(ms) && ms < startMs) out.add(t);
+  }
+  return out;
 }

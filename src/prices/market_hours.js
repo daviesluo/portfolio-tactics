@@ -174,6 +174,12 @@ export function usMarketPhase(now = new Date()) {
   return "overnight";                                     // 20:00–4:00
 }
 
+// Minutes past midnight in New York (DST by Intl), for code that needs where in the ET day a moment falls.
+export function etMinuteOfDay(now = new Date()) {
+  const { hh, mm } = etHourMinuteWeekday(now);
+  return hh * 60 + mm;
+}
+
 // "Weekend dead zone" — Friday after-hours close (20:00 ET) through
 // Sunday's overnight reopen (20:00 ET). US equities, including the
 // 24/5 overnight session, don't trade in this window, so the T212
