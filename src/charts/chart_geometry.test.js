@@ -5,6 +5,7 @@
 // chart now fails CI before deploy.
 
 import { describe, expect, it } from 'vitest';
+import { usMarketHoursUtc } from '../prices/market_hours.js';
 import { pointerToDataIndex, pointsToSvgPath, overnightTrailingGap, parseChartDateUTC, findRegularCloseIdx, findRegularOpenIdx, findPrevSessionCloseIdx, overnightDotWithinReach, utcMidnightsIn, utcMidnightIdxs } from './chart_geometry.js';
 
 // Fake an SVG element with just the surface the helper touches.
@@ -428,5 +429,27 @@ describe('utcMidnightIdxs: the first bar of each new UTC day, for an index-space
     expect(utcMidnightIdxs([{ date: '2026-11-12T22:00' }, { date: '2026-11-13T03:00' }, { date: '2026-11-13T04:00' }])).toEqual([1]);
     expect(utcMidnightIdxs([{ date: '2026-11-13T00:00' }, { date: '2026-11-13T05:00' }])).toEqual([]);
     expect(utcMidnightIdxs(null)).toEqual([]);
+  });
+});
+
+// The day after Thanksgiving closed at 13:00 ET (18:00 UTC), and its late session ran to 17:00 ET (22:00 UTC). A 16:00-ET
+// scan read Friday's 21:00 UTC bar — a late-session print — as its close, or Wednesday's when no bar sat there.
+describe('findRegularCloseIdx / findRegularOpenIdx: each day\'s own session', () => {
+  const series = [
+    { date: '2026-11-25T14:30', close: 100 }, { date: '2026-11-25T21:00', close: 110 },   // Wed open, Wed close
+    { date: '2026-11-25T23:00', close: 111 },                                               // Wed after hours
+    { date: '2026-11-27T14:30', close: 112 }, { date: '2026-11-27T18:00', close: 120 },   // Fri open, Fri 13:00 ET close
+    { date: '2026-11-27T21:00', close: 125 }, { date: '2026-11-27T21:55', close: 126 },   // Fri late session
+  ];
+  it('after the half day (and the Monday after) the close bar is Friday\'s 18:00 UTC', () => {
+    expect(findRegularCloseIdx(series, usMarketHoursUtc(new Date('2026-11-27T18:30:00Z')))).toBe(4);
+    expect(findRegularCloseIdx(series, usMarketHoursUtc(new Date('2026-11-30T12:00:00Z')))).toBe(4);
+    // The old shape, one fixed 21:00: the late-session bar.
+    expect(findRegularCloseIdx(series, { closeHh: 21, closeMm: 0 })).toBe(5);
+  });
+  it("a Monday pre-market after the US clocks change reads Friday's open in Friday's regime", () => {
+    const fri = [{ date: '2026-10-30T13:00', close: 1 }, { date: '2026-10-30T13:30', close: 2 }, { date: '2026-10-30T14:30', close: 3 }];
+    expect(findRegularOpenIdx(fri, usMarketHoursUtc(new Date('2026-11-02T12:00:00Z')))).toBe(1); // 09:30 EDT = 13:30 UTC
+    expect(findRegularOpenIdx(fri, { openHh: 14, openMm: 30 })).toBe(2);
   });
 });

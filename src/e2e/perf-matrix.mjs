@@ -35,7 +35,8 @@
 //
 // A second matrix below (SESSIONS) drives the same window at four instants
 // — before the open, in the session, after the close, a weekend — with
-// extended hours off and on, on both tabs.
+// extended hours off and on, on both tabs, and at three on the early close
+// of [•]-[•]-[•] (in the session, after [•]:[•] ET, after [•]:[•] ET).
 //
 // A hard gate since [•]-[•]-[•] (bin/gates.sh's; on GitHub too until CI-TRIM, [•]-[•]-[•]). Its clock is
 // pinned below, so it gives the same answer at any hour, and it refuses an
@@ -468,9 +469,75 @@ const SESSIONS = [
   },
 ];
 
+// ---- the day after Thanksgiving: an early close -----------------------------
+//
+// Davies (2026-11-27 ~18:50 UTC): "今天短交易日市场已经关市了，网站没识别出来". On 2026-11-27 the regular session ran
+// 09:30-13:00 ET (14:30-18:00 UTC) and the late session to 17:00 ET (22:00 UTC); Thursday was Thanksgiving, shut. The board
+// kept 'regular' to 16:00 ET (21:00 UTC). Three instants: 17:30 UTC in the session, 18:30 UTC after the 13:00 close, 22:30 UTC
+// after the late session. The book is the one above. Bars (UTC):
+//
+//   Wed 25 Nov   ACME 14:30 190, 16:00 195, 18:00 205, 21:00 210     ^GSPC the same times 4950 4980 5010 5050
+//   Fri 27 Nov   ACME 14:30 220, 16:00 215, 17:00 225, 18:00 230, late session 18:30 232, 21:55 233
+//                ^GSPC 14:30 5080, 16:00 5060, 17:00 5100, 18:00 5120, and a stray 19:00 bar at 5200 of the kind Yahoo's
+//                pre/post series slips in, which the cash index's session filter must drop
+//
+// Extended hours off, worked by hand: the latest session, Friday, against Wednesday's close (ACME 210, S&P 5050), basis
+// 10 x 210 + 500 = 2600, first point at 14:30 2700: +3.85 %; S&P first (5080-5050)/5050 = +0.59 %.
+//   17:30, in the session, a 17:25 bar (ACME 227, S&P 5102), ACME live 228 and the card at 5105: the book's point at
+//     17:30 is 2780, +6.92 %, five points; S&P (5105-5050)/5050 = +1.09 %, four points.
+//   18:30 and 22:30, after the close: ACME's regular price is the 13:00 close 230, 2800: +7.69 %, four points (no live
+//     point after the close); S&P +1.39 % at the card's 5120, four points: the stray 19:00 bar is outside the day's session.
+//     Read as a 16:00 close, 22:30 was still the session's day on the cash index's filter: the stray bar on the S&P line
+//     and a fifth point for the book (the old bundle: 5 and 5).
+// Extended hours on (the futures' trailing 24 h, 5000 -> 5050 -> 5100: +2.00 %): no ACME bar of Wednesday is inside it, so
+// the first point and B are its first bar inside, 220: 2700.
+//   17:30: still the session, the book's end at its live 228: (2780-2700)/2700 = +2.96 %.
+//   18:30: after hours, the book's end at its late-session price 232: (2820-2700)/2700 = +4.44 %. As a 16:00 close it was
+//     the session, at 230: +3.70 %.
+//   22:30: the late session's last price, 233: (2830-2700)/2700 = +4.81 %.
+// The header's dot reads Market Open, After-hours and Market Closed at the three instants (the old bundle: Market Open at
+// 18:30, After-hours at 22:30).
+const HALF_BARS = {
+  ACME: [['2026-11-25T14:30', 190], ['2026-11-25T16:00', 195], ['2026-11-25T18:00', 205], ['2026-11-25T21:00', 210],
+    ['2026-11-27T14:30', 220], ['2026-11-27T16:00', 215], ['2026-11-27T17:00', 225], ['2026-11-27T18:00', 230],
+    ['2026-11-27T18:30', 232], ['2026-11-27T21:55', 233]],
+  '^GSPC': [['2026-11-25T14:30', 4950], ['2026-11-25T16:00', 4980], ['2026-11-25T18:00', 5010], ['2026-11-25T21:00', 5050],
+    ['2026-11-27T14:30', 5080], ['2026-11-27T16:00', 5060], ['2026-11-27T17:00', 5100], ['2026-11-27T18:00', 5120],
+    ['2026-11-27T19:00', 5200]],
+};
+const HALF_ES = [['2026-11-26T22:40', 5000], ['2026-11-27T12:00', 5050], ['2026-11-27T18:10', 5100]];
+SESSIONS.push(
+  {
+    name: 'half-day in session', clock: '2026-11-27T17:30:00Z', bars: HALF_BARS, dot: 'Market Open',
+    quotes: { ACME: [228, 210], '^GSPC': [5105, 5050] },
+    extra: { ACME: [['2026-11-27T17:25', 227]], '^GSPC': [['2026-11-27T17:25', 5102]] },
+    es: HALF_ES,
+    off: { port: '+6.92%', portFirst: 3.85, portPts: 5, sp: '+1.09%', spFirst: 0.59, spPts: 4 },
+    on: { port: '+2.96%', inv: '+2.96%' },
+  },
+  {
+    name: 'half-day after 13:00', clock: '2026-11-27T18:30:00Z', bars: HALF_BARS, dot: 'After-hours',
+    quotes: { ACME: [230, 210], '^GSPC': [5120, 5050] }, ext: { ACME: 232 },
+    es: HALF_ES,
+    off: { port: '+7.69%', portFirst: 3.85, portPts: 4, sp: '+1.39%', spFirst: 0.59, spPts: 4 },
+    on: { port: '+4.44%', inv: '+4.44%' },
+  },
+  {
+    name: 'half-day after 17:00', clock: '2026-11-27T22:30:00Z', bars: HALF_BARS, dot: 'Market Closed',
+    quotes: { ACME: [230, 210], '^GSPC': [5120, 5050] }, ext: { ACME: 233 },
+    es: HALF_ES,
+    off: { port: '+7.69%', portFirst: 3.85, portPts: 4, sp: '+1.39%', spFirst: 0.59, spPts: 4 },
+    on: { port: '+4.81%', inv: '+4.81%' },
+  },
+);
+
 /** The session fixture's intraday bars for one symbol, as they stood at `nowKey` (UTC minute). */
 function sessionBars(st, sym, nowKey) {
   if (sym === 'ES=F') return st.es.map(([date, close]) => ({ date, close }));
+  if (st.bars) {
+    return [...(st.bars[sym] || []), ...(st.extra?.[sym] || [])].map(([date, close]) => ({ date, close }))
+      .filter((b) => b.date <= nowKey).sort((a, b) => a.date.localeCompare(b.date));
+  }
   const out = [];
   for (const [day, row] of Object.entries(S_DAYS)) {
     if (!row[sym]) continue;
@@ -509,7 +576,10 @@ async function runSessions(browser) {
     const book = sessionBook(st);
     const [spLast, spPrev] = st.quotes['^GSPC'];
     const quotes = {
-      ACME: { lastPrice: st.quotes.ACME[0], prevClose: st.quotes.ACME[1], currency: 'USD', dayPct: book.holdings.ACME.dayPct },
+      ACME: {
+        lastPrice: st.quotes.ACME[0], prevClose: st.quotes.ACME[1], currency: 'USD', dayPct: book.holdings.ACME.dayPct,
+        ...(st.ext?.ACME ? { extPrice: st.ext.ACME } : {}),
+      },
       '^GSPC': { lastPrice: spLast, prevClose: spPrev, currency: 'USD', dayPct: ((spLast - spPrev) / spPrev) * 100 },
       'ES=F': { lastPrice: 5100, prevClose: 5000, currency: 'USD', dayPct: 2 },
     };
@@ -561,6 +631,11 @@ async function runSessions(browser) {
 
     /** Read the panel until `ready` accepts it and it is still (`settledPanel`), or 8 s; the last read either way. */
     const settle = (/** @type {(r: any) => boolean} */ ready) => settledPanel(page, inflight, ready);
+    if (st.dot) {
+      const dot = await page.locator('.phase-dot:visible').first().getAttribute('title').catch(() => null);
+      rows.push({ tag: `${st.name}/the header's dot`, r: { values: [dot] } });
+      if (dot !== st.dot) { failures++; console.log(`  FAIL [24H ${st.name}] the header's dot reads ${dot} (want ${st.dot})`); }
+    }
     for (const ext of [false, true]) {
       if (ext) {
         await page.locator('.ext-switch:visible').first().click();
@@ -602,7 +677,7 @@ async function runSessions(browser) {
     }
     await ctx.close();
   }
-  console.log('\n=== 24H: extended hours off / on x pre-market / in session / after close / weekend x both tabs ===');
+  console.log('\n=== 24H: extended hours off / on x pre-market / in session / after close / weekend / the half day x both tabs ===');
   for (const { tag, r } of rows) {
     const [lineB, lineA] = r?.paths || [];
     console.log(`${tag.padEnd(36)} legend=${(r?.values || []).join(' / ').padEnd(18)}`

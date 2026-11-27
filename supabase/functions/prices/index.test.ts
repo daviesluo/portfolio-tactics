@@ -311,3 +311,33 @@ import { CORS as CORS_PREFLIGHT } from "./index.ts";
 Deno.test("CORS preflight advertises x-app-token", () => {
   assert(CORS_PREFLIGHT["Access-Control-Allow-Headers"].includes("x-app-token"));
 });
+
+// The day after Thanksgiving, 2026-11-27: the regular session ended at 13:00 ET. A coin's US-session day is measured from
+// that day's 13:00 bar, as the board's is, and from 13:00 its live price is the extended-hours one. Until 2026-11-27 the
+// 16:00 window ran on: at 14:00 ET the row read lastPrice = live and no extPrice, and its "close" was a late-session bar.
+const HALF_ROWS: Array<[string, number]> = [
+  ["2026-11-25T16:00:00-05:00", 100],  // Wed close ← prev
+  ["2026-11-26T16:00:00-05:00", 105],  // Thanksgiving: no session, skipped
+  ["2026-11-27T12:55:00-05:00", 109],
+  ["2026-11-27T13:00:00-05:00", 110],  // Fri 13:00 ET, the close ← last
+  ["2026-11-27T14:00:00-05:00", 115],  // the late session: not a regular candle
+];
+const HALF_TS = HALF_ROWS.map((r) => tsOf(r[0]));
+const HALF_CL = HALF_ROWS.map((r) => r[1]);
+
+Deno.test("rthSessionCloses: on an early close the 13:00-ET bar is the day's close", () => {
+  assertEquals(rthSessionCloses(HALF_TS, HALF_CL, EST_OFF), { last: 110, prev: 100 });
+});
+
+Deno.test("cryptoUsSessionQuote: after an early close (14:00 ET) the coin is off-session, anchored at 13:00", () => {
+  const q = cryptoUsSessionQuote(HALF_TS, HALF_CL, /*live*/ 116, /*prevMeta*/ 40, tsOf("2026-11-27T14:00:00-05:00"), EST_OFF);
+  assertEquals(q, { lastPrice: 110, extPrice: 116, prevClose: 100 });
+  // At 12:30 ET it is still the session: live, no extPrice.
+  const am = cryptoUsSessionQuote(HALF_TS.slice(0, 3), HALF_CL.slice(0, 3), 108, 40, tsOf("2026-11-27T12:30:00-05:00"), EST_OFF);
+  assertEquals(am, { lastPrice: 108, extPrice: null, prevClose: 100 });
+});
+
+Deno.test("isOutsideRth: the day's own close", () => {
+  assertEquals(isOutsideRth(13 * 60 + 30), false);
+  assertEquals(isOutsideRth(13 * 60 + 30, 13 * 60), true);
+});

@@ -14,19 +14,20 @@
 // Early closes are here too, since 2026-09-30 (improvement plan item 14):
 // on at most three days a year the regular session ends at 13:00 ET and the
 // late session runs to 17:00. Those ARE trading days, so they are not in the
-// holiday set; `usRegularCloseMin` gives the close, and the snapshot recorder
-// and the price function's extended-hours scan read it, so a sample from
-// 13:00 is the late session's print and never the frozen 13:00 close carried
-// as live. Crypto's US-session anchor keeps the 16:00-ET bar on every trading
-// day, and so does the board, whose anchors all read 16:00-ET bars.
+// holiday set; `usRegularCloseMin` gives the close, and the snapshot recorder,
+// the price function's extended-hours scan and (since 2026-11-27) its crypto
+// US-session anchor read it, so a sample from 13:00 is the late session's
+// print and never the frozen 13:00 close carried as live, and a 24/7 coin's
+// day is measured from the 13:00 bar as the board's is.
 //
-// The browser client keeps a byte-equivalent copy of the HOLIDAY rules in
-// `src/prices/market_hours.js` (`isUsMarketHoliday`) — different runtime, so the
-// two can't literally share a module. KEEP THEM IN SYNC: a change here
-// should be mirrored there (and vice-versa). The early closes have no client
-// copy: the board keeps 16:00 on those days by decision (see that file).
-// Pinned by `us_market_calendar.test.ts`, which also records the next several
-// years' closures and early closes so a regression in the rules is caught.
+// The browser client keeps a copy of these rules and of `US_SESSION` in
+// `src/prices/market_hours.js` (`isUsMarketHolidayYmd`, `isUsEarlyCloseYmd`,
+// `US_SESSION_TABLE`) — different runtime, so the two can't literally share a
+// module. `src/prices/us_calendar_parity.test.js` imports both and compares
+// them on every day of 2025-2030 (holiday, early close, close and session
+// times), so a change made on one side alone fails the gates. Pinned here by
+// `us_market_calendar.test.ts`, which also records the next several years'
+// closures and early closes so a regression in the rules is caught.
 
 /** UTC day-of-week (0=Sun…6=Sat) for a calendar Y-M-D. */
 function dowUTC(y: number, m: number, d: number): number {
@@ -127,9 +128,23 @@ function etYmd(at: Date): [number, number, number] {
   return [y, m, d];
 }
 
+/**
+ * The US equity sessions in ET minutes of the day: the client's `US_SESSION_TABLE` row (`src/prices/market_hours.js`,
+ * where the 23/5 note and what a dated change means are written), held to it by the parity test. Pre-market 04:00, the
+ * regular session 09:30-16:00 (13:00 on an early close), after hours to 20:00 (17:00 on an early close: NYSE Group's
+ * late sessions and Nasdaq's post-market close then), the overnight session from 20:00.
+ */
+export const US_SESSION = Object.freeze({
+  premarket: 4 * 60, open: 9 * 60 + 30, close: 16 * 60, post: 20 * 60,
+  earlyClose: 13 * 60, earlyPost: 17 * 60,
+  overnight: 20 * 60,
+});
+
+/** The regular session's open in ET minutes of the day: 09:30. */
+export const US_REGULAR_OPEN_MIN = US_SESSION.open;
 /** The regular session's close in ET minutes of the day: 16:00, and 13:00 on an early close. */
-export const US_REGULAR_CLOSE_MIN = 16 * 60;
-export const US_EARLY_CLOSE_MIN = 13 * 60;
+export const US_REGULAR_CLOSE_MIN = US_SESSION.close;
+export const US_EARLY_CLOSE_MIN = US_SESSION.earlyClose;
 
 /**
  * Does the regular session on the ET-calendar `y-m-d` end at 13:00 ET? The

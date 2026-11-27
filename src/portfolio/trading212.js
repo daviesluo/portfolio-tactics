@@ -30,7 +30,7 @@
 import { EDGE_TRADING212_URL, SB_ANON } from '../app/supabase_config.js';
 import { getAppToken } from '../app/auth.js';
 import { hasOvernightSession } from '../prices/ticker_class.js';
-import { etMinuteOfDay } from '../prices/market_hours.js';
+import { etMinuteOfDay, usSessionAt } from '../prices/market_hours.js';
 import { detectCurrency } from './fx.js';
 
 /**
@@ -727,7 +727,7 @@ const EXT_STALE_GRACE_MS = 15 * 60_000;
 
 /**
  * The tickers whose Yahoo extended-hours series has no bar since the session now running began: pre-market from 04:00 ET,
- * after hours from 16:00 ET, each given 15 minutes. Their extended-hours price is then an earlier session's last print
+ * after hours from the day's close (16:00 ET, 13:00 on an early close), each given 15 minutes. Their extended-hours price is then an earlier session's last print
  * (the day after Thanksgiving 2026, Wednesday's after-hours close for every ticker until the open), and the caller takes
  * Trading 212's price for them instead (`applyTrading212NightPrice`). A series that did not come back says nothing.
  * @param {Record<string, Array<{ date?: string }>> | null | undefined} extSeries  the refresh's 5-minute bars by ticker
@@ -739,7 +739,8 @@ export function staleExtTickers(extSeries, phase, now = new Date()) {
   /** @type {Set<string>} */
   const out = new Set();
   if (!extSeries || (phase !== 'premarket' && phase !== 'afterhours')) return out;
-  const sinceMin = etMinuteOfDay(now) - (phase === 'premarket' ? 240 : 960);
+  const session = usSessionAt(now);
+  const sinceMin = etMinuteOfDay(now) - (phase === 'premarket' ? session.premarket : session.close);
   const startMs = Math.floor(now.getTime() / 60_000) * 60_000 - sinceMin * 60_000;
   if (now.getTime() - startMs < EXT_STALE_GRACE_MS) return out;
   for (const [t, ser] of Object.entries(extSeries)) {

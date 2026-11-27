@@ -11,7 +11,7 @@
 import React from 'react';
 import { fxToUSD, fxPendingFor } from '../portfolio/fx.js';
 import { fetchHistorical, fetchHistoricalBatch } from '../prices/historical.js';
-import { usMarketHoursUtc, fourHourSlots } from '../prices/market_hours.js';
+import { usMarketHoursUtc, usSessionUtcMins, fourHourSlots } from '../prices/market_hours.js';
 import { loadRangeCache, saveRangeCache } from '../prices/cache.js';
 import { chartStoresReady, hydrateAllChartStores } from '../prices/chart_store.js';
 import { Storage } from '../app/storage.js';
@@ -906,7 +906,8 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
     .slice()
     .sort((a, b) => a.date.localeCompare(b.date));
   // 1D session-window filter:
-  //   - ^GSPC: drop bars outside 9:30-16:00 ET (RTH only — Yahoo's
+  //   - ^GSPC: drop bars outside 9:30 to the day's close (16:00 ET, 13:00
+  //     on an early close; RTH only — Yahoo's
   //     prepost=true sometimes slips spurious low-volume bars in,
   //     which would render as a "data between close and open"
   //     artifact).
@@ -937,8 +938,10 @@ function PerfChart({ portfolio, marketData, extendedHours, phase, rangeKey: rang
         if (typeof p.date !== 'string' || p.date.length < 16 || p.date[10] !== 'T') return true;
         const utcMins = parseInt(p.date.slice(11, 13), 10) * 60 + parseInt(p.date.slice(14, 16), 10);
         if (spSymbol === '^GSPC') {
-          return utcMins >= mh.openHh * 60 + mh.openMm
-              && utcMins <= mh.closeHh * 60 + mh.closeMm;
+          // Each bar against its own day's session: on an early close the cash index stops at 13:00 ET, and the day
+          // before it (or after) keeps its 16:00.
+          const { openMins, closeMins } = usSessionUtcMins(p.date, mh);
+          return utcMins >= openMins && utcMins <= closeMins;
         }
         // ES=F: keep bars whose ET time-of-day is in [04:00, 20:00)
         // (= pre-market start through after-hours end). Convert UTC

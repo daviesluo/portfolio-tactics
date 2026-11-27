@@ -18,7 +18,7 @@ import {
   clearProxyBackoff,
   mapWithConcurrency,
 } from './proxy_chain.js';
-import { usMarketHoursUtc } from './market_hours.js';
+import { usMarketHoursUtc, isUsCloseStamp } from './market_hours.js';
 import { EDGE_PRICES_URL, EDGE_ANON_KEY } from './yahoo_fetch.js';
 import { getAppToken } from '../app/auth.js';
 
@@ -408,7 +408,8 @@ export async function fetchHistoricalBatch(symbols, range = "ytd", interval = "1
 //
 // Implementation: pull a 5-day intraday window (so we're sure to have
 // at least one regular-close bar even at 3am ET pre-market) and walk
-// backwards for the latest bar at exactly closeHh:closeMm UTC. The
+// backwards for the latest bar at its own day's close (`isUsCloseStamp`:
+// 16:00 ET, 13:00 on an early close, no day without a session). The
 // previous "must be today's UTC date" restriction broke the lookup at
 // every BST 8am refresh — todayUtc was the new day, no 16:00 ET bar
 // existed on it yet, and the cards silently fell back to dayPct.
@@ -426,11 +427,7 @@ export async function fetchTodayRegularClose(tickers) {
     const series = batch[t];
     if (!Array.isArray(series) || series.length === 0) continue;
     for (let i = series.length - 1; i >= 0; i--) {
-      const d = series[i].date;
-      if (typeof d !== "string" || d.length < 16 || d[10] !== "T") continue;
-      const hh = parseInt(d.slice(11, 13), 10);
-      const mm = parseInt(d.slice(14, 16), 10);
-      if (hh === mh.closeHh && mm === mh.closeMm) { out[t] = series[i].close; break; }
+      if (isUsCloseStamp(series[i].date, mh)) { out[t] = series[i].close; break; }
     }
   }
   return out;

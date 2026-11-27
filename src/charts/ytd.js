@@ -7,6 +7,7 @@
 // Range catalogue:
 
 import { netPosition } from '../portfolio/transactions.js';
+import { isUsCloseStamp } from '../prices/market_hours.js';
 
 /**
  * @typedef {'1D'|'1W'|'1M'|'3M'|'YTD'} RangeKey
@@ -263,18 +264,18 @@ export function filterToLatestDay(points) {
 /**
  * BTC-style US-session window for a 24/7 crypto's 1D chart when the
  * Extended Hours toggle is OFF: keep bars from the most recent US regular
- * close (the last bar at `mh.closeHh:mh.closeMm` UTC = 16:00 ET) through
+ * close (the last bar at its day's close, `isUsCloseStamp`: 16:00 ET, 13:00 on an early close) through
  * the end, so the chart runs "from the previous US close to now" like a US
  * stock's 1D instead of a rolling 24 h. Crypto trades straight through the
  * close so the series has a bar there; falls back to the input unchanged
  * when no exact-close bar is present (holiday / gap). `mh` =
- * `usMarketHoursUtc()` (its closeHh/closeMm are UTC, DST-aware).
+ * `usMarketHoursUtc()` (its `closeOn` gives each day's close in UTC, DST-aware).
  * `isTradingDay(dateStr)` (optional) rejects a 16:00-ET bar whose date is a
  * weekend / holiday — crypto has one EVERY day, and over a long holiday
  * weekend keying off a non-trading day's bar picks a fake "close".
  * @template {{date:string}} T
  * @param {T[]|null} points
- * @param {{closeHh:number, closeMm:number}|null} mh
+ * @param {{closeHh:number, closeMm:number, closeOn?: (d: string) => ({hh: number, mm: number} | null)}|null} mh
  * @param {(dateStr:string)=>boolean} [isTradingDay]
  * @returns {T[]|null}
  */
@@ -283,10 +284,7 @@ export function windowSinceLastUsClose(points, mh, isTradingDay) {
   const ok = typeof isTradingDay === 'function' ? isTradingDay : () => true;
   for (let i = points.length - 1; i >= 0; i--) {
     const d = points[i] && points[i].date;
-    if (typeof d !== 'string' || d.length < 16 || d[10] !== 'T') continue;
-    const hh = parseInt(d.slice(11, 13), 10);
-    const mm = parseInt(d.slice(14, 16), 10);
-    if (hh === mh.closeHh && mm === mh.closeMm && ok(d)) return points.slice(i);
+    if (isUsCloseStamp(d, mh) && ok(d)) return points.slice(i);
   }
   return points;
 }
@@ -302,7 +300,9 @@ export function windowSinceLastUsClose(points, mh, isTradingDay) {
  * start time" — the moment the current after-hours session began — marks).
  * Crypto trades straight through the close so both close bars exist; the
  * data hook keeps enough trailing history (see `applyChartWindow`) for the
- * previous close to be present. `mh.closeHh:closeMm` are UTC, DST-aware.
+ * previous close to be present. Each close is its own day's (`isUsCloseStamp`):
+ * on the Monday after an early close the last two are Friday's 18:00 UTC bar
+ * and Monday's 21:00.
  * Fallbacks: one close bar → start→that close (still ends at a close);
  * none (holiday / gap / no mh / empty) → the input unchanged.
  * `isTradingDay(dateStr)` (optional) skips a 16:00-ET bar on a weekend /
@@ -310,7 +310,7 @@ export function windowSinceLastUsClose(points, mh, isTradingDay) {
  * "last two closes" would otherwise be weekend bars, not real US sessions.
  * @template {{date:string}} T
  * @param {T[]|null} points
- * @param {{closeHh:number, closeMm:number}|null} mh
+ * @param {{closeHh:number, closeMm:number, closeOn?: (d: string) => ({hh: number, mm: number} | null)}|null} mh
  * @param {(dateStr:string)=>boolean} [isTradingDay]
  * @returns {T[]|null}
  */
@@ -321,10 +321,7 @@ export function windowBetweenLastTwoUsCloses(points, mh, isTradingDay) {
   const closeIdxs = [];
   for (let i = points.length - 1; i >= 0 && closeIdxs.length < 2; i--) {
     const d = points[i] && points[i].date;
-    if (typeof d !== 'string' || d.length < 16 || d[10] !== 'T') continue;
-    const hh = parseInt(d.slice(11, 13), 10);
-    const mm = parseInt(d.slice(14, 16), 10);
-    if (hh === mh.closeHh && mm === mh.closeMm && ok(d)) closeIdxs.push(i);
+    if (isUsCloseStamp(d, mh) && ok(d)) closeIdxs.push(i);
   }
   // Scanned back-to-front: closeIdxs = [lastCloseIdx, prevCloseIdx].
   if (closeIdxs.length === 2) return points.slice(closeIdxs[1], closeIdxs[0] + 1);

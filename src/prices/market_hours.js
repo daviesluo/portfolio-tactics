@@ -44,7 +44,65 @@ function etHourMinuteWeekday(now) {
   return { hh, mm, wd };
 }
 
-// ---- US market holiday calendar (NYSE / Nasdaq full closures) ----
+// ---- US equity sessions: the one table ----
+// Every US session time the board uses, in ET minutes of the day, in one
+// place, so that a dated change to the market's hours is one row here and
+// nothing else: the phase (`usMarketPhase`), the header clock's dot
+// (`usClockPhase`), the refresh cadence and the night overlay
+// (`isWeekendDeadZone`), and every chart and anchor that asks for the day's
+// close (`usMarketHoursUtc`, `usCloseUtcMs`, `isUsCloseStamp`) all read it.
+//
+//   premarket  04:00  the pre-market opens (Nasdaq, NYSE Arca)
+//   open       09:30  the regular session
+//   close      16:00  its close, and `earlyClose` 13:00 on an early close
+//   post       20:00  the after-hours session ends, and `earlyPost` 17:00 on
+//                     an early close: NYSE Group's calendar says its late
+//                     sessions (Arca, American, National, Texas) close at
+//                     17:00 then, and Nasdaq's post-market does the same.
+//                     Yahoo's `currentTradingPeriod` still reads post to
+//                     20:00 ET on 2026-11-27, but nothing prints after 17:00.
+//   overnight  20:00  the overnight session (Blue Ocean ATS, Trading 212's
+//                     night prices) opens Sunday to Thursday evenings and
+//                     runs to `premarket`. It does not run into a holiday or
+//                     a weekend, and every early close is followed by one, so
+//                     an early close is shut from 17:00 until the next session.
+//
+// 23/5 is coming: Nasdaq and NYSE Arca target Sunday 2026-12-06 21:00 ET for
+// trading Sunday 21:00 to Friday 20:00 ET, with an exchange night session
+// 21:00-04:00 beside today's 04:00-20:00 and a 20:00-21:00 pause, pending the
+// SIP's readiness, so the date may slip. It is NOT live here until it is
+// confirmed. When it is, add one row: `{ ...the row above, from: '<the ET date
+// of the first Sunday>', overnight: 21 * 60 }`. The 20:00-21:00 pause then
+// reads closed on the clock (any gap between `post` and `overnight` does), the
+// weekend's dead zone ends at Sunday 21:00, and nothing else needs an edit.
+// Which venue Trading 212's night prices come from then is a question for
+// that day, not this table.
+//
+// The server keeps the same times in `supabase/functions/_shared/us_market_calendar.ts`
+// (`US_SESSION`); `src/prices/us_calendar_parity.test.js` holds the two to
+// each other, day by day for 2025-2030.
+/**
+ * @typedef {{ from: string, premarket: number, open: number, close: number, post: number,
+ *   earlyClose: number, earlyPost: number, overnight: number }} UsSessionRow
+ */
+/** @type {ReadonlyArray<Readonly<UsSessionRow>>} */
+export const US_SESSION_TABLE = Object.freeze([
+  Object.freeze({
+    from: '1900-01-01',
+    premarket: 4 * 60, open: 9 * 60 + 30, close: 16 * 60, post: 20 * 60,
+    earlyClose: 13 * 60, earlyPost: 17 * 60,
+    overnight: 20 * 60,
+  }),
+]);
+
+/** The table's row for an ET calendar date (`YYYY-MM-DD`): the last one whose `from` is not after it. */
+function usSessionRow(ymd) {
+  let row = US_SESSION_TABLE[0];
+  for (const r of US_SESSION_TABLE) if (r.from <= ymd) row = r;
+  return row;
+}
+
+// ---- US market calendar (NYSE / Nasdaq full closures and early closes) ----
 // Rule-based rather than a hand-maintained date list: every holiday is
 // either a fixed date (with the standard NYSE weekend-observance shift)
 // or an nth-weekday, and Good Friday is derived from Easter. This means
@@ -55,14 +113,20 @@ function etHourMinuteWeekday(now) {
 // merely "polls on a closed day" (harmless), never the reverse.
 //
 // Early closes (13:00 ET: the Friday after Thanksgiving, and July 3 /
-// December 24 when they fall Monday to Thursday) are modelled on the server
-// only, in `supabase/functions/_shared/us_market_calendar.ts`, where the
-// snapshot recorder and the price function's extended-hours scan read them.
-// The board keeps 'regular' to 16:00 on those days by decision (2026-09-30):
-// its after-hours verdict, the market cards' close anchor and the chart
-// windows all read 16:00-ET bars, so an 'afterhours' phase from 13:00 alone
-// would show every US row's extended figure as unknown until 16:00. Moving
-// all of them to the day's own close is the whole change, not this one.
+// December 24 when they fall Monday to Thursday) are the board's since
+// 2026-11-27 (Davies, that afternoon: "今天短交易日市场已经关市了，网站没识别出来").
+// Until then they were the server's alone and the board kept 'regular' to
+// 16:00 by a decision of 2026-09-30, because its after-hours verdict, the
+// market cards' close anchor and the chart windows all read 16:00-ET bars:
+// an 'afterhours' phase from 13:00 alone would have shown every US row's
+// extended figure as unknown until 16:00. All of them now ask for the day's
+// own close (`usMarketHoursUtc`, whose `closeOn` gives each date's, and
+// `isUsCloseStamp`), so the phase moves with them: regular 09:30-13:00,
+// after hours 13:00-17:00, then shut.
+//
+// The rules are the server's, mirrored: `supabase/functions/_shared/us_market_calendar.ts`.
+// Different runtimes, so the two cannot share a module; `us_calendar_parity.test.js`
+// compares them on every day of 2025-2030 and fails when either drifts.
 
 /** UTC day-of-week (0=Sun…6=Sat) for a calendar Y-M-D. */
 function dowUTC(y, m, d) { return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); }
@@ -121,6 +185,51 @@ function holidaySetFor(y) {
   return set;
 }
 
+/** Is the ET-calendar `y-m-d` (m, d 1-based) a full-day US market holiday? The server's `isUsMarketHolidayYmd`. */
+export function isUsMarketHolidayYmd(y, m, d) {
+  let set = _holidayCache.get(y);
+  if (!set) { set = holidaySetFor(y); _holidayCache.set(y, set); }
+  return set.has(`${m}-${d}`);
+}
+
+/**
+ * Does the regular session on the ET-calendar `y-m-d` end at 13:00 ET? The
+ * Friday after Thanksgiving always; July 3 and December 24 when they fall
+ * Monday to Thursday (on a Friday each is the observed holiday, on a weekend
+ * there is no session). The server's `isUsEarlyCloseYmd`; NYSE's published
+ * calendars for 2025-2028 name exactly these days.
+ */
+export function isUsEarlyCloseYmd(y, m, d) {
+  if (m === 11) return d === nthWeekday(y, 11, 4, 4) + 1;
+  if ((m === 7 && d === 3) || (m === 12 && d === 24)) {
+    const dow = dowUTC(y, m, d);
+    return dow >= 1 && dow <= 4;
+  }
+  return false;
+}
+
+/**
+ * The US session on the ET-calendar `y-m-d`, in ET minutes of the day: the
+ * table's row with the day's own close and after-hours end (13:00 and 17:00
+ * on an early close), and whether the day trades at all (not a weekend, not
+ * a full holiday).
+ * @returns {{ trading: boolean, early: boolean, premarket: number, open: number, close: number, post: number, overnight: number }}
+ */
+export function usDaySession(y, m, d) {
+  const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  const row = usSessionRow(`${y}-${pad(m)}-${pad(d)}`);
+  const dow = dowUTC(y, m, d);
+  const trading = dow !== 0 && dow !== 6 && !isUsMarketHolidayYmd(y, m, d);
+  const early = trading && isUsEarlyCloseYmd(y, m, d);
+  return {
+    trading, early,
+    premarket: row.premarket, open: row.open,
+    close: early ? row.earlyClose : row.close,
+    post: early ? row.earlyPost : row.post,
+    overnight: row.overnight,
+  };
+}
+
 /** ET calendar { y, m, d } for `now` (en-CA short date is YYYY-MM-DD). */
 function etDateParts(now) {
   const s = new Intl.DateTimeFormat('en-CA', {
@@ -130,12 +239,22 @@ function etDateParts(now) {
   return { y, m, d };
 }
 
+/** The US session of `now`'s ET calendar day (`usDaySession`). */
+export function usSessionAt(now = new Date()) {
+  const { y, m, d } = etDateParts(now);
+  return usDaySession(y, m, d);
+}
+
 /** True when `now` lands on a full-day US market holiday (ET calendar). */
 export function isUsMarketHoliday(now = new Date()) {
   const { y, m, d } = etDateParts(now);
-  let set = _holidayCache.get(y);
-  if (!set) { set = holidaySetFor(y); _holidayCache.set(y, set); }
-  return set.has(`${m}-${d}`);
+  return isUsMarketHolidayYmd(y, m, d);
+}
+
+/** True when `now`'s ET calendar day is an early close (13:00 ET). */
+export function isUsEarlyClose(now = new Date()) {
+  const { y, m, d } = etDateParts(now);
+  return isUsEarlyCloseYmd(y, m, d) && usDaySession(y, m, d).trading;
 }
 
 /**
@@ -144,34 +263,36 @@ export function isUsMarketHoliday(now = new Date()) {
  * bar EVERY day, so its 1D window picker (windowSinceLastUsClose /
  * windowBetweenLastTwoUsCloses) uses this to skip the weekend / holiday
  * bars and key only off real US session closes. The bar date is UTC, but a
- * 16:00-ET close bar's UTC date equals its ET trading date (16:00 EDT =
- * 20:00 UTC / EST = 21:00 UTC, same calendar day), so checking the UTC date
- * at noon (safely mid-morning ET, same day) is correct. Permissive on a
- * malformed input (returns true) so a bad string never blanks the chart.
+ * close bar's UTC date equals its ET trading date (13:00-16:00 ET is
+ * 17:00-21:00 UTC, the same calendar day), so the UTC date is the ET one.
+ * Permissive on a malformed input (returns true) so a bad string never
+ * blanks the chart.
  * @param {string} dateStr
  */
 export function isUsTradingDateStr(dateStr) {
   if (typeof dateStr !== 'string' || dateStr.length < 10) return true;
-  const at = new Date(dateStr.slice(0, 10) + 'T12:00:00Z');
-  if (isNaN(at.getTime())) return true;
-  const wd = at.getUTCDay();
-  if (wd === 0 || wd === 6) return false;   // Sun / Sat
-  return !isUsMarketHoliday(at);
+  const [y, m, d] = dateStr.slice(0, 10).split('-').map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d) || !(m >= 1 && m <= 12) || !(d >= 1 && d <= 31)) return true;
+  return usDaySession(y, m, d).trading;
 }
 
-// US market phase, based on NY local time.
-// RTH: 09:30–16:00, Premarket: 04:00–09:30, Afterhours: 16:00–20:00, Overnight: 20:00–04:00.
+// US market phase, based on NY local time, from the day's session
+// (`usSessionAt`): regular 09:30 to the close (16:00, 13:00 on an early
+// close), premarket 04:00-09:30, afterhours from the close to the end of the
+// late session (20:00, 17:00 on an early close), overnight otherwise.
 // Weekends AND full-day holidays → overnight (market closed; same bucket
-// every other surface already treats as "outside RTH, nothing trading").
+// every other surface already treats as "outside RTH, nothing trading"), and
+// so is an early close from 17:00: nothing trades, and `usClockPhase` says so.
 export function usMarketPhase(now = new Date()) {
   const { hh, mm, wd } = etHourMinuteWeekday(now);
   const mins = hh * 60 + mm;
   if (wd === "Sat" || wd === "Sun") return "overnight";
-  if (isUsMarketHoliday(now)) return "overnight";
-  if (mins >= 570 && mins < 960) return "regular";      // 9:30–16:00
-  if (mins >= 240 && mins < 570) return "premarket";    // 4:00–9:30
-  if (mins >= 960 && mins < 1200) return "afterhours";  // 16:00–20:00
-  return "overnight";                                     // 20:00–4:00
+  const s = usSessionAt(now);
+  if (!s.trading) return "overnight";
+  if (mins >= s.open && mins < s.close) return "regular";
+  if (mins >= s.premarket && mins < s.open) return "premarket";
+  if (mins >= s.close && mins < s.post) return "afterhours";
+  return "overnight";
 }
 
 // Minutes past midnight in New York (DST by Intl), for code that needs where in the ET day a moment falls.
@@ -180,35 +301,44 @@ export function etMinuteOfDay(now = new Date()) {
   return hh * 60 + mm;
 }
 
-// "Weekend dead zone" — Friday after-hours close (20:00 ET) through
-// Sunday's overnight reopen (20:00 ET). US equities, including the
-// 24/5 overnight session, don't trade in this window, so the T212
-// overnight quote can't move and there's nothing fresh to pull. The
-// auto-refresh stays slow (5 min) here while weekday overnights run
-// the fast 30 s cadence that keeps live overnight prices current.
-// Boundaries line up with the overnight session: Fri 20:00 ET in,
-// Sun 20:00 ET out.
+// "Weekend dead zone" — Friday's after-hours end (20:00 ET, 17:00 on an
+// early-close Friday, the day after Thanksgiving) through Sunday's overnight
+// reopen (20:00 ET). US equities, including the 24/5 overnight session,
+// don't trade in this window, so the T212 overnight quote can't move and
+// there's nothing fresh to pull. The auto-refresh stays slow (5 min) here
+// while weekday overnights run the fast 30 s cadence that keeps live
+// overnight prices current. Both ends come from the session table.
 export function isWeekendDeadZone(now = new Date()) {
   const { hh, mm, wd } = etHourMinuteWeekday(now);
   const mins = hh * 60 + mm;
   if (wd === "Sat") return true;
-  if (wd === "Fri") return mins >= 1200;  // 20:00 ET onward
-  if (wd === "Sun") return mins < 1200;   // before 20:00 ET
+  if (wd === "Fri") return mins >= usSessionAt(now).post;
+  if (wd === "Sun") return mins < usSessionAt(now).overnight;
   return false;
 }
 
 // The header clock's dot: `usMarketPhase`, except that nothing trading reads "closed", not "overnight". That function puts
 // weekends and holidays in the overnight bucket on purpose (the refresh cadence and the T212 night overlay key off it), so the
 // dot sat on the night colour all weekend (Davies, 2026-10-31 01:20 UTC, a Saturday: "现在都周六1:20了还是night market的颜色").
-// Closed: the weekend dead zone (Fri 20:00 → Sun 20:00 ET), a full-day holiday until its 20:00 ET, and from 20:00 ET on the
-// evening before one, when the overnight session that would lead into it does not run.
+// Closed: the weekend dead zone (Fri 20:00 → Sun 20:00 ET), a full-day holiday until its 20:00 ET, the gap between a day's
+// late session and its overnight (17:00-20:00 ET on an early close), and from 20:00 ET on the evening before a holiday, when
+// the overnight session that would lead into it does not run.
 export function usClockPhase(now = new Date()) {
   if (isWeekendDeadZone(now)) return "closed";
   const { hh, mm } = etHourMinuteWeekday(now);
   const mins = hh * 60 + mm;
-  if (isUsMarketHoliday(now) && mins < 1200) return "closed";
-  if (mins >= 1200 && isUsMarketHoliday(new Date(now.getTime() + 12 * 3600e3))) return "closed";
+  const s = usSessionAt(now);
+  if (isUsMarketHoliday(now) && mins < s.overnight) return "closed";
+  if (s.trading && mins >= s.post && mins < s.overnight) return "closed";
+  if (mins >= s.overnight && isUsMarketHoliday(new Date(now.getTime() + 12 * 3600e3))) return "closed";
   return usMarketPhase(now);
+}
+
+// Is the overnight session (20:00-04:00 ET) actually running? `usMarketPhase` says "overnight" for every hour nothing else
+// trades, the weekend and holidays included; the night overlay and the chart's night dot want the session itself, the one
+// `usClockPhase` shows in the night colour.
+export function usOvernightRunning(now = new Date()) {
+  return usClockPhase(now) === "overnight";
 }
 
 // UK time-zone short name ('GMT' or 'BST') for the given moment.
@@ -223,13 +353,20 @@ export function ukTzAbbr(now = new Date()) {
   return tz === 'BST' || tz === 'GMT' ? tz : 'GMT';
 }
 
-// US regular-market open / close in UTC for the given moment, accounting
-// for whether the date lands in EDT (UTC-4, March 2nd Sun → Nov 1st Sun)
-// or EST (UTC-5). Returned as hh/mm pairs so the chart code can compare
-// against the UTC-string slice of each intraday bar.
+// US regular-market open / close in UTC for the given moment's ET day,
+// accounting for whether the date lands in EDT (UTC-4, March 2nd Sun → Nov
+// 1st Sun) or EST (UTC-5) and for the day's own close (`usDaySession`: 13:00
+// ET on an early close). Returned as hh/mm pairs so the chart code can
+// compare against the UTC-string slice of each intraday bar.
 //
-//   EDT: open 13:30 UTC (= 9:30 ET), close 20:00 UTC (= 16:00 ET)
-//   EST: open 14:30 UTC,             close 21:00 UTC
+//   EDT: open 13:30 UTC (= 9:30 ET), close 20:00 UTC (= 16:00 ET), 17:00 UTC on an early close
+//   EST: open 14:30 UTC,             close 21:00 UTC,                18:00 UTC on an early close
+//
+// `closeHh:closeMm` is TODAY's close. A series that spans several days asks
+// `closeOn(date)` for each bar's own day instead (`isUsCloseStamp`): the
+// previous session's close is 21:00 UTC when today's is 18:00 (the Monday
+// after the day after Thanksgiving reads Friday's 18:00 bar), and a 5-day
+// series that crosses a DST change has two closing hours in it.
 //
 // Detection: ask the runtime for the NY hour, compare to the UTC hour;
 // the offset is 4 (EDT) or 5 (EST). Avoids hard-coded DST cutover
@@ -237,18 +374,103 @@ export function ukTzAbbr(now = new Date()) {
 const NY_HOUR_FMT = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York', hour: '2-digit', hour12: false,
 });
-export function usMarketHoursUtc(now = new Date()) {
-  const utcHour = now.getUTCHours();
+/** Hours New York is behind UTC at an instant: 4 (EDT) or 5 (EST). */
+function nyOffsetHours(at) {
   // Formatter hoisted: this is called once per DAY of a 6-month slot
   // grid, and constructing an Intl.DateTimeFormat costs ~10-50 us.
-  const nyHour = parseInt(NY_HOUR_FMT.format(now), 10) % 24;
-  let diff = utcHour - nyHour;
+  const nyHour = parseInt(NY_HOUR_FMT.format(at), 10) % 24;
+  let diff = at.getUTCHours() - nyHour;
   if (diff > 12)  diff -= 24;
   if (diff < -12) diff += 24;
-  const edt = diff === 4;
-  return edt
-    ? { openHh: 13, openMm: 30, closeHh: 20, closeMm: 0, edt: true }
-    : { openHh: 14, openMm: 30, closeHh: 21, closeMm: 0, edt: false };
+  return diff;
+}
+
+/**
+ * The US regular close of a UTC calendar date as `{ hh, mm }` UTC, or null
+ * when the date has no session (a weekend or a full holiday). Cached per
+ * date: the close scans ask it once per bar.
+ * @type {Map<string, {hh: number, mm: number} | null>}
+ */
+const _closeOnCache = new Map();
+/** @param {string} dateStr  `YYYY-MM-DD…` (a bar's UTC date, which is its ET trading date at the close) */
+export function usCloseOnUtc(dateStr) {
+  if (typeof dateStr !== 'string' || dateStr.length < 10) return null;
+  const day = dateStr.slice(0, 10);
+  if (_closeOnCache.has(day)) return _closeOnCache.get(day) ?? null;
+  const [y, m, d] = day.split('-').map(Number);
+  /** @type {{hh: number, mm: number} | null} */
+  let out = null;
+  if (Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)) {
+    const s = usDaySession(y, m, d);
+    if (s.trading) {
+      // 18:00 UTC is early afternoon in New York in either regime, far from the 02:00 cutover: the regime read is that day's.
+      const mins = s.close + nyOffsetHours(new Date(Date.UTC(y, m - 1, d, 18))) * 60;
+      out = { hh: Math.floor(mins / 60), mm: mins % 60 };
+    }
+  }
+  if (_closeOnCache.size > 512) _closeOnCache.clear();
+  _closeOnCache.set(day, out);
+  return out;
+}
+
+/**
+ * @typedef {{ openHh: number, openMm: number, closeHh: number, closeMm: number, edt: boolean,
+ *   early?: boolean, closeOn?: (dateStr: string) => ({hh: number, mm: number} | null) }} UsMarketHoursUtc
+ */
+/** @returns {UsMarketHoursUtc} */
+export function usMarketHoursUtc(now = new Date()) {
+  const off = nyOffsetHours(now);
+  const edt = off === 4;
+  const s = usSessionAt(now);
+  const openUtc = s.open + (edt ? 4 : 5) * 60;
+  const closeUtc = s.close + (edt ? 4 : 5) * 60;
+  return {
+    openHh: Math.floor(openUtc / 60), openMm: openUtc % 60,
+    closeHh: Math.floor(closeUtc / 60), closeMm: closeUtc % 60,
+    edt, early: s.early, closeOn: usCloseOnUtc,
+  };
+}
+
+/**
+ * Is the bar stamped `d` (`YYYY-MM-DDTHH:MM`, UTC) the bar AT a US regular
+ * close: 16:00 ET on its own day, 13:00 ET on an early close, never on a day
+ * with no session? Yahoo stamps one there (the closing print in a regular-hours
+ * series, the first late-session bar with pre/post; on 2026-11-27 SPY's and
+ * ^GSPC's at 18:00 UTC). With an `mh` from `usMarketHoursUtc` the close is read
+ * per bar's day (`closeOn`); a bare `{ closeHh, closeMm }` (the older tests'
+ * shape) is matched as one fixed time.
+ * @param {string} d
+ * @param {{ closeHh: number, closeMm: number, closeOn?: (dateStr: string) => ({hh: number, mm: number} | null) } | null | undefined} mh
+ */
+export function isUsCloseStamp(d, mh) {
+  if (typeof d !== 'string' || d.length < 16 || d[10] !== 'T' || !mh) return false;
+  const hh = parseInt(d.slice(11, 13), 10);
+  const mm = parseInt(d.slice(14, 16), 10);
+  if (typeof mh.closeOn === 'function') {
+    const c = mh.closeOn(d);
+    return c != null && hh === c.hh && mm === c.mm;
+  }
+  return hh === mh.closeHh && mm === mh.closeMm;
+}
+
+/**
+ * The US regular session of a bar's UTC date in UTC minutes of the day,
+ * `{ openMins, closeMins }`, for the extended-hours verdict
+ * (`extPriceIsRealAh`): which bars are outside it. A day with no session
+ * gives `fallback` (today's), so a weekend read of Friday's bars asks with
+ * Friday's date.
+ * @param {string | null | undefined} dateStr
+ * @param {UsMarketHoursUtc} fallback
+ */
+export function usSessionUtcMins(dateStr, fallback) {
+  const c = typeof dateStr === 'string' ? usCloseOnUtc(dateStr) : null;
+  const openMins = fallback.openHh * 60 + fallback.openMm;
+  if (!c) return { openMins, closeMins: fallback.closeHh * 60 + fallback.closeMm };
+  // The open is 09:30 ET on every day: the close's offset from its ET time says the regime.
+  const [y, m, d] = String(dateStr).slice(0, 10).split('-').map(Number);
+  const s = usDaySession(y, m, d);
+  const off = c.hh * 60 + c.mm - s.close;
+  return { openMins: s.open + off, closeMins: c.hh * 60 + c.mm };
 }
 
 /** Saturday or Sunday, per a short weekday name already read in the
@@ -462,17 +684,19 @@ export function londonHourUtcMs(dateStr, hour) {
 
 /**
  * Epoch ms of the US regular close on a calendar day — 20:00 UTC under
- * EDT, 21:00 UTC under EST. Sampled at 18:00 UTC, which is early
- * afternoon in New York in either regime and nowhere near the 02:00
- * local cutover, so the regime read back is that day's.
+ * EDT, 21:00 UTC under EST, three hours earlier on an early close
+ * (`usCloseOnUtc`). A day with no session (the grid asks weekdays only, a
+ * holiday among them) reads 16:00 ET, where nothing prints either way.
  *
  * @param {string} dateStr  YYYY-MM-DD
  * @returns {number}
  */
 export function usCloseUtcMs(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
-  const mh = usMarketHoursUtc(new Date(Date.UTC(y, m - 1, d, 18)));
-  return Date.UTC(y, m - 1, d, mh.closeHh, mh.closeMm);
+  const c = usCloseOnUtc(dateStr);
+  if (c) return Date.UTC(y, m - 1, d, c.hh, c.mm);
+  const off = nyOffsetHours(new Date(Date.UTC(y, m - 1, d, 18)));
+  return Date.UTC(y, m - 1, d, 16 + off, 0);
 }
 
 // Rebuilt at most once an hour: the grid only gains a point when the

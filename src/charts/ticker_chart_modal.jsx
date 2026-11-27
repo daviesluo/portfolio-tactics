@@ -6,7 +6,7 @@
 import React from 'react';
 import { soldOut } from '../app/view_quote.js';
 import { Modal } from '../board/modals.jsx';
-import { usMarketHoursUtc, isWeekendDeadZone, isUsMarketHoliday, isUsTradingDateStr, foreignSessionIsOpen } from '../prices/market_hours.js';
+import { usMarketHoursUtc, usSessionUtcMins, usOvernightRunning, isUsTradingDateStr, foreignSessionIsOpen } from '../prices/market_hours.js';
 import { fxToUSD, fxRateToUSD } from '../portfolio/fx.js';
 import { strategyMoney, strategyDayAnchor } from '../portfolio/board_strategies.js';
 import { fmtPrice as fmtPr, fmtPct as fmP, fmtMoney as fmtMo, fmtSharesFor as fmtShFor, pctColor as pcC, maskDigits, fmtDayMonth } from '../app/formatters.js';
@@ -213,8 +213,9 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
   const quoted = soldOut(holding) ? null : holding;
   const extPriceLive  = md?.extPrice  ?? quoted?.extPrice  ?? null;
   const lastPriceLive = md?.lastPrice ?? quoted?.lastPrice ?? null;
-  const openMinsUtc   = mh.openHh  * 60 + mh.openMm;
-  const closeMinsUtc  = mh.closeHh * 60 + mh.closeMm;
+  // The session of the day the modal's bars end on (13:00 ET on an early close), as the board's verdict reads it.
+  const { openMins: openMinsUtc, closeMins: closeMinsUtc } = usSessionUtcMins(
+    Array.isArray(series) && series.length > 0 ? series[series.length - 1]?.date : null, mh);
   // hasExtendedBars — "is `extPrice` a real AH quote for this
   // ticker?". Prefer the verdict the home page already computed for
   // this holding (`holding.extPriceTrusted`, from its ext-hours
@@ -371,8 +372,9 @@ export function TickerChartModal({ ticker, holding, marketData, extendedHours, p
     ? parseChartDateUTC(displaySeries[displaySeries.length - 1]?.date).getTime()
     : NaN;
   const nightDotActive = useExt && phase === 'overnight' && hasOvernightSession(ticker)
-    && !isWeekendDeadZone()
-    && !isUsMarketHoliday()   // holiday = market closed all day; the frozen T212 close isn't a live overnight quote
+    // The session itself running (`usOvernightRunning`): not the weekend dead zone, not a holiday (the frozen T212 close isn't
+    // a live overnight quote), not the evening before one or an early close's evening — the board's night overlay's test.
+    && usOvernightRunning()
     && typeof extPriceLive === 'number' && extPriceLive > 0
     && !!NIGHT_BAR_INTERVAL_MS[rangeKey]
     && !hasOvernightLine

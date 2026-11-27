@@ -14,7 +14,7 @@ import { needsViewQuote, withViewQuote } from './view_quote.js';
 import { createQuoteGuard, holdMessage } from '../prices/quote_band.js';
 import { loadRangeCache } from '../prices/cache.js';
 import { fetchTodayRegularClose, fetchHistoricalBatch } from '../prices/historical.js';
-import { usMarketPhase, usMarketHoursUtc, isWeekendDeadZone } from '../prices/market_hours.js';
+import { usMarketPhase, usMarketHoursUtc, usSessionUtcMins, usOvernightRunning, isWeekendDeadZone } from '../prices/market_hours.js';
 import { Storage } from './storage.js';
 import { POSITION_COORDS } from '../portfolio/positions.js';
 import { INITIAL_PORTFOLIO } from '../portfolio/data.js';
@@ -1075,11 +1075,11 @@ function Board({ isReadOnly, agents = false }) {
       Storage.saveMarketCache(mcResult);
     }
     setSource(src);
-    // Open/close minutes for the ext-hours verdict below — computed
-    // once per refresh, not per holding.
+    // Open/close minutes for the ext-hours verdict below: the session of
+    // the day the bars are from (13:00 ET on an early close, so the late
+    // session's bars from then count as extended hours), today's when a
+    // series has none.
     const extMh = usMarketHoursUtc(new Date());
-    const extOpenMins  = extMh.openHh  * 60 + extMh.openMm;
-    const extCloseMins = extMh.closeHh * 60 + extMh.closeMm;
     // The plausibility band (prices/quote_band.js), at the write: only the
     // quotes it believes reach the board. Its width follows each name's own
     // five-minute bars where they are at hand: this tick's extended-hours
@@ -1134,8 +1134,9 @@ function Board({ isReadOnly, agents = false }) {
         // metrics layer falls back to the lightweight ±5% quote
         // heuristic.
         const extSer = extSeries[t];
-        const extPriceTrusted = (Array.isArray(extSer) && extSer.length > 0)
-          ? extPriceIsRealAh(extSer, extPriceVal, extOpenMins, extCloseMins)
+        const extMins = Array.isArray(extSer) && extSer.length > 0 ? usSessionUtcMins(extSer[extSer.length - 1]?.date, extMh) : null;
+        const extPriceTrusted = extMins
+          ? extPriceIsRealAh(extSer, extPriceVal, extMins.openMins, extMins.closeMins)
           : null;
         next.holdings[t] = {
           ...next.holdings[t],
@@ -1203,13 +1204,15 @@ function Board({ isReadOnly, agents = false }) {
       // and re-entering the page repeats it": every load resets the
       // toggle to off, so the mount refresh ran with nightActive=false
       // and never wrote the night price.
-      // ...but NOT during the weekend dead zone (Fri 20:00 → Sun 20:00 ET):
+      // ...but NOT during the weekend dead zone (Fri 20:00 → Sun 20:00 ET; Fri 17:00 after an early close):
       // the 24/5 market is closed, so T212's quote is a frozen Friday-close
       // price. Don't overlay it as a live overnight quote — matches the
       // overnight-record cron, which also skips recording on weekends. The
       // overnight overlay (and the chart's night dot) resume at the Sun
       // 20:00 ET reopen.
-      const nightActive = refreshPhase === 'overnight' && !isWeekendDeadZone(new Date());
+      // The session itself, not the phase's overnight bucket (`usOvernightRunning`): a holiday, the evening before one and an
+      // early close's evening are in that bucket too, with nothing trading and Trading 212's price a frozen close.
+      const nightActive = refreshPhase === 'overnight' && usOvernightRunning(new Date());
       applyTrading212NightPrice(next.holdings, t212Holdings?.prices, nightActive);
       // Pre-market and after hours: a holding whose Yahoo bars stop before the session now running has an earlier session's
       // print as its extended-hours price, so it takes Trading 212's instead (Davies, 2026-11-27, the day after Thanksgiving,

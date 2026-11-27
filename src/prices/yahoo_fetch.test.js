@@ -473,3 +473,18 @@ describe('Edge calls carry the app token', () => {
     expect(headersOf(edge)['X-App-Token']).toBe('tok.sig');
   });
 });
+
+// The proxy fallback's extended-hours price on the day after Thanksgiving: the regular session ended at 13:00 ET, so a 13:35 ET
+// candle is the late session's. Until 2026-11-27 it was taken as regular, and the scan walked back to the morning's pre-market.
+describe('extPriceFromCandles on an early close', () => {
+  const ts = (iso) => Date.parse(iso) / 1000;
+  it('reads the late session from 13:00 ET', () => {
+    const t = [ts('2026-11-27T13:00:00Z'), ts('2026-11-27T17:55:00Z'), ts('2026-11-27T18:35:00Z')];
+    expect(extPriceFromCandles(t, [101, 102, 103], -5 * 3600)).toBe(103);
+    expect(extPriceFromCandles(t.slice(0, 2), [101, 102], -5 * 3600)).toBe(101);
+  });
+  it('an ordinary afternoon is still regular to 16:00 ET', () => {
+    const t = [ts('2026-11-25T13:00:00Z'), ts('2026-11-25T18:35:00Z')];
+    expect(extPriceFromCandles(t, [101, 103], -5 * 3600)).toBe(101);
+  });
+});

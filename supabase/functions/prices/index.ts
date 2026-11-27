@@ -8,7 +8,7 @@
 import { reportServerError } from "../_shared/ops.ts";
 import { verifyToken } from "../_shared/token.ts";
 import { readBoardStrategies } from "../_shared/board_strategies.ts";
-import { isUsTradingDay, usRegularCloseMin } from "../_shared/us_market_calendar.ts";
+import { isUsTradingDay, usRegularCloseMin, US_REGULAR_CLOSE_MIN, US_REGULAR_OPEN_MIN } from "../_shared/us_market_calendar.ts";
 
 // `x-app-token` is advertised here BEFORE anything requires it, on
 // purpose. A custom request header makes the call non-simple, so the
@@ -29,9 +29,10 @@ export const CORS = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-// Regular session boundaries in exchange-local minutes-of-day
-const MARKET_OPEN_MIN  = 9 * 60 + 30;  // 9:30 AM
-const MARKET_CLOSE_MIN = 16 * 60;       // 4:00 PM
+// Regular session boundaries in exchange-local minutes-of-day (the shared calendar's): 09:30 and 16:00. A candle's own day's
+// close, 13:00 on an early close, is `usRegularCloseMin`.
+const MARKET_OPEN_MIN  = US_REGULAR_OPEN_MIN;
+const MARKET_CLOSE_MIN = US_REGULAR_CLOSE_MIN;
 
 // 6-digit numeric → assume Chinese mutual fund code
 const CN_FUND_RE = /^\d{6}$/;
@@ -60,8 +61,8 @@ export function localMinOfDay(utcSec: number, gmtOffsetSec: number): number {
  * matches the predicate used to detect extended-hours candles.
  * Exported for tests.
  */
-export function isOutsideRth(localMin: number): boolean {
-  return localMin < MARKET_OPEN_MIN || localMin >= MARKET_CLOSE_MIN;
+export function isOutsideRth(localMin: number, closeMin: number = MARKET_CLOSE_MIN): boolean {
+  return localMin < MARKET_OPEN_MIN || localMin >= closeMin;
 }
 
 /**
@@ -101,7 +102,8 @@ export function localDayNumber(utcSec: number, gmtOffsetSec: number): number {
  * Real regular-session closes for the thin OTC ADRs whose Yahoo
  * `regularMarketPrice` is unreliable (it reverts to the session open). Walks
  * the 5-min candles backward and returns the close of the last candle INSIDE
- * the 09:30-16:00 ET regular session (`last` — the real price at the 16:00 ET
+ * the regular session, 09:30 to its day's close (16:00 ET, 13:00 on an early
+ * close; `last` — the real price at the close
  * close) plus the last in-session candle on an EARLIER local day (`prev` — the
  * real previous close, hence the 2-day fetch). Skips null / non-positive and
  * out-of-session (pre / post-market) candles. Either field is null when no
@@ -123,7 +125,10 @@ export function rthSessionCloses(
     const t = timestamps[i];
     if (typeof t !== "number" || !Number.isFinite(t)) continue;
     const m = localMinOfDay(t, gmtOffsetSec);
-    if (m < MARKET_OPEN_MIN || m > MARKET_CLOSE_MIN) continue;
+    // To the candle's own day's close, the bar AT it included: 16:00, 13:00 on an early close, when the 13:05-16:00
+    // candles are the late session's (until 2026-11-27 they counted, so an OTC ADR's "close" and a coin's US-session
+    // anchor were a late-session print).
+    if (m < MARKET_OPEN_MIN || m > usRegularCloseMin(t, gmtOffsetSec)) continue;
     // Skip candles on non-trading days (weekend / holiday). A 24/7 crypto
     // has in-session-clock candles every day, but only a real trading
     // day's 16:00-ET bar is an actual close — without this the last/prev
@@ -188,8 +193,8 @@ export function etOffsetSec(nowMs: number): number {
  *                 non-trading day (isUsTradingDay), matching the client's
  *                 usMarketPhase which buckets weekends/holidays as
  *                 "overnight".
- * The 16:00-ET bar stays the anchor on an early-close day too, as the
- * client's does: the board's anchors all read 16:00-ET bars.
+ * On an early close the session ends at 13:00 ET and the 13:00 bar is the
+ * anchor, as the board's is since 2026-11-27 (`usRegularCloseMin`).
  * Falls back to `regularMarketPrice` / `prevCloseMeta` when no in-session
  * candle is available. Pure — exported for tests.
  */
@@ -202,13 +207,15 @@ export function cryptoUsSessionQuote(
   etOff: number,
 ): { lastPrice: number; extPrice: number | null; prevClose: number } {
   const { last, prev } = rthSessionCloses(timestamps, closes, etOff);
-  // "Outside the live US session" = outside 9:30-16:00 ET OR a non-trading
+  // "Outside the live US session" = outside 9:30 to the day's close (16:00 ET,
+  // 13:00 on an early close) OR a non-trading
   // day (weekend / holiday). On a holiday the clock can read 13:45 ET but
   // the market is closed all day, so the 24/7 crypto is off-session and its
   // live price belongs in extPrice — matching the client's usMarketPhase
   // (which returns "overnight" then). Without the trading-day term the row
   // read extPrice=null / lastPrice=live and the day change collapsed to 0%.
-  const afterClose = isOutsideRth(localMinOfDay(nowSec, etOff)) || !isUsTradingDay(nowSec, etOff);
+  const afterClose = isOutsideRth(localMinOfDay(nowSec, etOff), usRegularCloseMin(nowSec, etOff))
+    || !isUsTradingDay(nowSec, etOff);
   const prevClose = (prev != null && prev > 0) ? prev : prevCloseMeta;
   const lastPrice = afterClose
     ? ((last != null && last > 0) ? last : regularMarketPrice)

@@ -6,6 +6,8 @@
 // remembered in the other or the two would silently diverge again.
 // Extracted here as pure functions so the bug shape can't recur.
 
+import { isUsCloseStamp, usSessionUtcMins } from '../prices/market_hours.js';
+
 /**
  * Map a pointer event's clientX to the index of the nearest data
  * point in a chart whose SVG viewBox is `[0, 0, W, H]` and whose
@@ -189,8 +191,9 @@ export function parseChartDateUTC(d) {
   return new Date(d);
 }
 
-// Index of the bar sitting at exactly the regular-session close
-// (closeHh:closeMm UTC = 20:00 EDT / 21:00 EST), searching backwards
+// Index of the bar sitting at exactly the regular-session close of its own
+// day (`isUsCloseStamp`: 20:00 EDT / 21:00 EST, 17:00 / 18:00 UTC on an
+// early close), searching backwards
 // from the newest bar. STRICT equality only — a looser `hh < closeHh`
 // fallback would match a post-midnight premarket bar and pin the close
 // anchor / CLOSE marker to the wrong session (the bug both charts'
@@ -200,11 +203,7 @@ export function parseChartDateUTC(d) {
 export function findRegularCloseIdx(series, mh) {
   if (!Array.isArray(series) || !mh) return -1;
   for (let i = series.length - 1; i >= 0; i--) {
-    const d = series[i] && series[i].date;
-    if (typeof d !== 'string' || d.length < 16) continue;
-    const hh = parseInt(d.slice(11, 13), 10);
-    const mm = parseInt(d.slice(14, 16), 10);
-    if (hh === mh.closeHh && mm === mh.closeMm) return i;
+    if (isUsCloseStamp(series[i] && series[i].date, mh)) return i;
   }
   return -1;
 }
@@ -234,8 +233,13 @@ export function findRegularOpenIdx(series, mh) {
   const todayDay = (last && typeof last.date === 'string') ? last.date.slice(0, 10) : '';
   if (!todayDay) return -1;
   const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  // The open of the series' own last day, in that day's regime (a Monday pre-market after the clocks change reads Friday's
+  // bars an hour from today's), when `mh` knows each day's session; a bare `{ openHh, openMm }` is that time.
+  const openMins = typeof (/** @type {any} */ (mh).closeOn) === 'function'
+    ? usSessionUtcMins(todayDay, /** @type {any} */ (mh)).openMins
+    : mh.openHh * 60 + mh.openMm;
   // UTC wall-clock stamps compare as strings: `YYYY-MM-DDTHH:MM`.
-  const openAt = `${todayDay}T${pad(mh.openHh)}:${pad(mh.openMm)}`;
+  const openAt = `${todayDay}T${pad(Math.floor(openMins / 60))}:${pad(openMins % 60)}`;
   let prev = '';
   for (let i = 0; i < series.length; i++) {
     const d = series[i] && series[i].date;

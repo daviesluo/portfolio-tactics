@@ -8,6 +8,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   isUsEarlyCloseYmd, isUsMarketHolidayAt, isUsMarketHolidayYmd, isUsTradingDay, usRegularCloseMin, usRegularCloseMinAt,
+  US_SESSION, US_REGULAR_CLOSE_MIN, US_EARLY_CLOSE_MIN, US_REGULAR_OPEN_MIN,
 } from "./us_market_calendar.ts";
 
 const EDT = -14400, EST = -18000;
@@ -104,4 +105,11 @@ Deno.test("usRegularCloseMinAt: the Date form reads the America/New_York day", (
   assertEquals(usRegularCloseMinAt(new Date("2026-11-28T03:00:00Z")), 13 * 60);
   // 04:00Z on Nov 27 is 23:00 EST on Thanksgiving: not.
   assertEquals(usRegularCloseMinAt(new Date("2026-11-27T04:00:00Z")), 16 * 60);
+});
+
+Deno.test("US_SESSION: the session times, in ET minutes (the client's US_SESSION_TABLE row; the parity test holds the two)", () => {
+  assertEquals({ ...US_SESSION }, {
+    premarket: 240, open: 570, close: 960, post: 1200, earlyClose: 780, earlyPost: 1020, overnight: 1200,
+  });
+  assertEquals([US_REGULAR_OPEN_MIN, US_REGULAR_CLOSE_MIN, US_EARLY_CLOSE_MIN], [570, 960, 780]);
 });

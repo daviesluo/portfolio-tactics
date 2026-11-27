@@ -97,7 +97,9 @@ vi.mock('../agents/agents.jsx', () => ({ AgentsModal: () => <div data-testid="ag
 // preload path; keep every other market-hours helper real.
 vi.mock('../prices/market_hours.js', async () => {
   const actual = await vi.importActual('../prices/market_hours.js');
-  return { ...actual, usMarketPhase: () => 'overnight' };
+  // The session itself running too (`usOvernightRunning`, the night overlay's test): forced, as the phase is, so the
+  // run does not depend on the hour it runs at (a half day's afternoon reads after hours on the real clock).
+  return { ...actual, usMarketPhase: () => 'overnight', usOvernightRunning: () => true };
 });
 vi.mock('../prices/overnight_intraday.js', () => ({
   fetchOvernightSeries: vi.fn(() => Promise.resolve({})),

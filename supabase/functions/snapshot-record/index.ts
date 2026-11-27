@@ -48,7 +48,7 @@
 //   403 — bad auth
 //   500 — DB write failed
 
-import { isUsMarketHolidayAt, usRegularCloseMinAt } from "../_shared/us_market_calendar.ts";
+import { isUsMarketHolidayAt, usRegularCloseMinAt, US_SESSION } from "../_shared/us_market_calendar.ts";
 import { b64url, bearerIs, sign } from "../_shared/token.ts";
 import { reportServerError } from "../_shared/ops.ts";
 import { fetchT212Positions } from "../_shared/t212_positions.ts";
@@ -119,7 +119,7 @@ export function isUsRegularSession(at: Date): boolean {
   if (isUsMarketHolidayAt(at)) return false;
   const { weekday, minutes } = etParts(at);
   if (weekday === 0 || weekday === 6) return false;
-  return minutes >= 9 * 60 + 30 && minutes < usRegularCloseMinAt(at);
+  return minutes >= US_SESSION.open && minutes < usRegularCloseMinAt(at);
 }
 
 /**
@@ -139,7 +139,7 @@ export function isUsRegularSession(at: Date): boolean {
  */
 export function isUsOvernightSession(at: Date): boolean {
   const { minutes } = etParts(at);
-  return minutes >= 20 * 60 || minutes < 4 * 60;
+  return minutes >= US_SESSION.overnight || minutes < US_SESSION.premarket;
 }
 
 // The two listings outside the US whose price the board takes from Trading 212 at every hour: its own list is

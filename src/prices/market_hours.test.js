@@ -10,6 +10,8 @@ import {
   isWeekendDeadZone, usMarketPhase, usClockPhase, isUsMarketHoliday, isUsTradingDateStr,
   LONDON_SLOT_HOURS, londonHourUtcMs, usCloseUtcMs, fourHourSlots,
   lseIsOpen, euroExchangeIsOpen, foreignSessionIsOpen,
+  usMarketHoursUtc, usCloseOnUtc, isUsCloseStamp, usSessionUtcMins, usOvernightRunning, isUsEarlyClose,
+  usDaySession, ukTzAbbr, US_SESSION_TABLE,
 } from './market_hours.js';
 
 // Helper: a Date at the given UTC wall-clock. In January (EST, UTC-5)
@@ -354,5 +356,130 @@ describe('usClockPhase', () => {
     expect(usClockPhase(utc('2026-11-26T01:00:00Z'))).toBe('closed');      // Wed 20:00 EST
     expect(usClockPhase(utc('2026-11-26T17:00:00Z'))).toBe('closed');      // Thu 12:00 EST
     expect(usClockPhase(utc('2026-11-27T01:00:00Z'))).toBe('overnight');   // Thu 20:00 EST, into Friday's session
+  });
+});
+
+// Early closes (Davies, 2026-11-27 ~18:50 UTC, the day after Thanksgiving: "今天短交易日市场已经关市了，网站没识别出来"). The
+// board kept 'regular' to 16:00 ET on those days; the regular session ends at 13:00 ET and the late session at 17:00. Every
+// answer below is the calendar worked by hand: EST is UTC-5 (13:00 ET = 18:00 UTC, 17:00 ET = 22:00 UTC), EDT UTC-4.
+describe('early closes: the session table on the day after Thanksgiving, Christmas Eve and July 3', () => {
+  it('2026-11-27 (Fri, EST): regular to 13:00, after hours to 17:00, then shut for the weekend', () => {
+    const at = (h, m) => utc(`2026-11-27T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00Z`);
+    expect(usMarketPhase(at(9, 0))).toBe('premarket');     // 04:00 ET
+    expect(usMarketPhase(at(14, 30))).toBe('regular');     // 09:30 ET
+    expect(usMarketPhase(at(17, 30))).toBe('regular');     // 12:30 ET
+    expect(usMarketPhase(at(17, 59))).toBe('regular');     // 12:59 ET
+    expect(usMarketPhase(at(18, 0))).toBe('afterhours');   // 13:00 ET, the close
+    expect(usMarketPhase(at(18, 30))).toBe('afterhours');  // 13:30 ET, the moment Davies wrote
+    expect(usMarketPhase(at(21, 59))).toBe('afterhours');  // 16:59 ET
+    expect(usMarketPhase(at(22, 0))).toBe('overnight');    // 17:00 ET: the late sessions are closed
+    expect(usMarketPhase(at(22, 30))).toBe('overnight');
+    expect(usClockPhase(at(18, 30))).toBe('afterhours');
+    expect(usClockPhase(at(22, 0))).toBe('closed');
+    expect(usClockPhase(at(22, 30))).toBe('closed');
+    expect(isWeekendDeadZone(at(21, 59))).toBe(false);
+    expect(isWeekendDeadZone(at(22, 0))).toBe(true);       // the 5-minute refresh from 17:00 ET, not 20:00
+    expect(usOvernightRunning(at(22, 30))).toBe(false);
+    expect(usOvernightRunning(utc('2026-11-28T01:30:00Z'))).toBe(false);
+    expect(isUsEarlyClose(at(12, 0))).toBe(true);
+  });
+  it('2026-12-24 (Thu, EST): the same hours; the evening is shut (no overnight into Christmas); 12-25 is closed', () => {
+    expect(usMarketPhase(utc('2026-12-24T17:59:00Z'))).toBe('regular');
+    expect(usMarketPhase(utc('2026-12-24T18:00:00Z'))).toBe('afterhours');
+    expect(usMarketPhase(utc('2026-12-24T22:00:00Z'))).toBe('overnight');
+    expect(usClockPhase(utc('2026-12-24T22:00:00Z'))).toBe('closed');   // 17:00 ET, the gap to the overnight
+    expect(usClockPhase(utc('2026-12-25T01:30:00Z'))).toBe('closed');   // 20:30 ET, the evening before a holiday
+    expect(isWeekendDeadZone(utc('2026-12-24T22:00:00Z'))).toBe(false); // a Thursday: the cadence stays fast
+    expect(usClockPhase(utc('2026-12-25T15:00:00Z'))).toBe('closed');
+    expect(usClockPhase(utc('2026-12-23T23:00:00Z'))).toBe('afterhours'); // Wed 18:00 ET: an ordinary day before it
+  });
+  it('2028-07-03 (Mon, EDT): regular to 17:00 UTC, after hours to 21:00 UTC, then shut until 07-05', () => {
+    expect(usMarketPhase(utc('2028-07-03T16:59:00Z'))).toBe('regular');
+    expect(usMarketPhase(utc('2028-07-03T17:00:00Z'))).toBe('afterhours');
+    expect(usMarketPhase(utc('2028-07-03T20:59:00Z'))).toBe('afterhours');
+    expect(usClockPhase(utc('2028-07-03T21:00:00Z'))).toBe('closed');
+    expect(usClockPhase(utc('2028-07-04T01:00:00Z'))).toBe('closed');   // 21:00 EDT: no overnight into July 4
+    expect(usMarketHoursUtc(utc('2028-07-03T15:00:00Z'))).toMatchObject({ closeHh: 17, closeMm: 0, edt: true, early: true });
+  });
+  it('an early close on a Friday holiday is no early close: 2026-07-03 is Independence Day observed', () => {
+    expect(usDaySession(2026, 7, 3)).toMatchObject({ trading: false, early: false });
+    expect(usClockPhase(utc('2026-07-03T15:00:00Z'))).toBe('closed');
+    expect(usDaySession(2026, 7, 2)).toMatchObject({ trading: true, early: false, close: 960, post: 1200 });
+  });
+});
+
+describe("each day's own close: usMarketHoursUtc, usCloseOnUtc, isUsCloseStamp, usSessionUtcMins", () => {
+  it("today's close is 18:00 UTC on the half day, and each date keeps its own", () => {
+    const mh = usMarketHoursUtc(utc('2026-11-27T18:30:00Z'));
+    expect(mh).toMatchObject({ openHh: 14, openMm: 30, closeHh: 18, closeMm: 0, edt: false, early: true });
+    expect(usCloseOnUtc('2026-11-27')).toEqual({ hh: 18, mm: 0 });
+    expect(usCloseOnUtc('2026-11-25')).toEqual({ hh: 21, mm: 0 });
+    expect(usCloseOnUtc('2026-11-26')).toBeNull();               // Thanksgiving
+    expect(usCloseOnUtc('2026-11-28')).toBeNull();               // Saturday
+    expect(usCloseOnUtc('2026-10-30')).toEqual({ hh: 20, mm: 0 }); // the Friday before the US clocks change
+    expect(usCloseOnUtc('2026-11-02')).toEqual({ hh: 21, mm: 0 }); // the Monday after
+    expect(usCloseUtcMs('2026-11-27')).toBe(Date.UTC(2026, 10, 27, 18));
+    expect(usCloseUtcMs('2026-12-24')).toBe(Date.UTC(2026, 11, 24, 18));
+  });
+  it('the close bar is matched on its own day: Friday 18:00 is one, Friday 21:00 (a late-session bar) is not', () => {
+    const mh = usMarketHoursUtc(utc('2026-11-30T12:00:00Z'));    // the Monday after, before the open: today's close 21:00
+    expect(isUsCloseStamp('2026-11-27T18:00', mh)).toBe(true);
+    expect(isUsCloseStamp('2026-11-27T21:00', mh)).toBe(false);
+    expect(isUsCloseStamp('2026-11-25T21:00', mh)).toBe(true);
+    expect(isUsCloseStamp('2026-11-26T21:00', mh)).toBe(false);  // a holiday has no close (a coin prints there)
+    expect(isUsCloseStamp('2026-11-28T21:00', mh)).toBe(false);
+    expect(isUsCloseStamp('2026-10-30T20:00', mh)).toBe(true);   // across the DST change: 16:00 EDT
+    expect(isUsCloseStamp('2026-10-30T21:00', mh)).toBe(false);  // 17:00 EDT is not a close
+    // A bare { closeHh, closeMm } is one fixed time, as before.
+    expect(isUsCloseStamp('2026-11-28T21:00', { closeHh: 21, closeMm: 0 })).toBe(true);
+  });
+  it('usSessionUtcMins gives the session of the bars\' own day', () => {
+    const today = usMarketHoursUtc(utc('2026-11-28T15:00:00Z')); // a Saturday reading Friday's bars
+    expect(usSessionUtcMins('2026-11-27T21:55', today)).toEqual({ openMins: 14 * 60 + 30, closeMins: 18 * 60 });
+    expect(usSessionUtcMins('2026-10-30T19:00', today)).toEqual({ openMins: 13 * 60 + 30, closeMins: 20 * 60 });
+    expect(usSessionUtcMins(null, today)).toEqual({ openMins: 14 * 60 + 30, closeMins: 21 * 60 });
+    expect(usSessionUtcMins('2026-11-28T10:00', today)).toEqual({ openMins: 14 * 60 + 30, closeMins: 21 * 60 });
+  });
+  it('the 3M grid samples the half day at its 13:00 ET close', () => {
+    const slots = fourHourSlots(Date.UTC(2026, 10, 27, 0), Date.UTC(2026, 10, 27, 23, 30));
+    expect(slots.map((ms) => new Date(ms).toISOString().slice(11, 16))).toEqual(['01:00', '05:00', '09:00', '13:00', '17:00', '18:00', '23:00']);
+  });
+});
+
+describe('the session table: one row, 23/5 not live', () => {
+  it('holds the times every consumer reads, in ET minutes', () => {
+    expect(US_SESSION_TABLE).toHaveLength(1);
+    expect(US_SESSION_TABLE[0]).toMatchObject({
+      premarket: 240, open: 570, close: 960, post: 1200, earlyClose: 780, earlyPost: 1020, overnight: 1200,
+    });
+    // 2026-12-06, the 23/5 target date, still reads as today's market: the overnight opens Sunday 20:00 ET.
+    expect(usClockPhase(utc('2026-12-07T00:59:00Z'))).toBe('closed');     // Sun 19:59 EST
+    expect(usClockPhase(utc('2026-12-07T01:00:00Z'))).toBe('overnight');  // Sun 20:00 EST
+    expect(usClockPhase(utc('2026-12-08T01:30:00Z'))).toBe('overnight');  // Mon 20:30 EST: no pause yet
+  });
+});
+
+describe('the holidays ahead render closed, and the DST weeks keep their hours', () => {
+  it.each([
+    ['2026-12-25', 'Christmas'], ['2027-01-01', "New Year's Day"], ['2027-01-18', 'Martin Luther King Jr. Day'],
+    ['2027-02-15', "Presidents' Day"], ['2027-03-26', 'Good Friday'],
+  ])('%s (%s) is closed at 15:00 UTC, and its morning is no pre-market', (day) => {
+    expect(usClockPhase(utc(`${day}T15:00:00Z`))).toBe('closed');
+    expect(usMarketPhase(utc(`${day}T15:00:00Z`))).toBe('overnight');
+    expect(usMarketPhase(utc(`${day}T11:00:00Z`))).toBe('overnight');
+    expect(isUsTradingDateStr(day)).toBe(false);
+  });
+  it('the weeks the US and the UK are on different clocks: the close in UTC and London\'s label', () => {
+    // US on EDT, UK still GMT (2027-03-14 to 03-28): 16:00 EDT = 20:00 UTC = 20:00 London.
+    expect(usMarketHoursUtc(utc('2027-03-15T15:00:00Z'))).toMatchObject({ openHh: 13, openMm: 30, closeHh: 20, edt: true });
+    expect(ukTzAbbr(utc('2027-03-15T15:00:00Z'))).toBe('GMT');
+    expect(usMarketPhase(utc('2027-03-15T13:30:00Z'))).toBe('regular');
+    expect(usMarketPhase(utc('2027-03-15T20:00:00Z'))).toBe('afterhours');
+    // UK on GMT since 2026-10-25, US on EDT to 11-01: the same.
+    expect(usMarketHoursUtc(utc('2026-10-27T15:00:00Z'))).toMatchObject({ closeHh: 20, edt: true });
+    expect(ukTzAbbr(utc('2026-10-27T15:00:00Z'))).toBe('GMT');
+    // From 2026-11-02 both on standard time: 21:00.
+    expect(usMarketHoursUtc(utc('2026-11-02T15:00:00Z'))).toMatchObject({ closeHh: 21, edt: false });
+    expect(usMarketPhase(utc('2026-11-02T14:29:00Z'))).toBe('premarket');
   });
 });

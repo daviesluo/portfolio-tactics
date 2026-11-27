@@ -17,6 +17,7 @@ import {
   mapWithConcurrency,
 } from './proxy_chain.js';
 import { isUsEquity, hasOvernightSession } from './ticker_class.js';
+import { usDaySession } from './market_hours.js';
 import { SB_URL, SB_ANON } from '../app/supabase_config.js';
 import { getAppToken } from '../app/auth.js';
 
@@ -54,9 +55,8 @@ function edgeHeaders() {
 }
 
 // Regular US session in exchange-local minutes-of-day — the same
-// 9:30-16:00 window the prices Edge Function buckets candles by.
-const RTH_OPEN_MIN = 9 * 60 + 30;
-const RTH_CLOSE_MIN = 16 * 60;
+// window the prices Edge Function buckets candles by: 9:30 to the candle's
+// own day's close (16:00, 13:00 on an early close; `usDaySession`).
 
 /**
  * Most recent candle close that sits OUTSIDE the regular session —
@@ -84,8 +84,10 @@ export function extPriceFromCandles(timestamps, closes, gmtOffsetSec) {
   for (let i = timestamps.length - 1; i >= 0; i--) {
     const close = closes[i];
     if (close == null || !isFinite(close) || close <= 0) continue;
-    const localMin = Math.floor(((((timestamps[i] + gmtOffsetSec) % 86400) + 86400) % 86400) / 60);
-    if (localMin < RTH_OPEN_MIN || localMin >= RTH_CLOSE_MIN) return close;
+    const local = new Date((timestamps[i] + gmtOffsetSec) * 1000);
+    const localMin = local.getUTCHours() * 60 + local.getUTCMinutes();
+    const session = usDaySession(local.getUTCFullYear(), local.getUTCMonth() + 1, local.getUTCDate());
+    if (localMin < session.open || localMin >= session.close) return close;
   }
   return null;
 }

@@ -10,7 +10,7 @@ import {
   filterToLastHours, filterToLast24h, fillVenueSessionGrid, resampleToSlots,
 } from './ytd.js';
 import { netPosition } from '../portfolio/transactions.js';
-import { isUsTradingDateStr } from '../prices/market_hours.js';
+import { isUsTradingDateStr, usMarketHoursUtc } from '../prices/market_hours.js';
 
 const yearStart      = '2026-01-01';
 const yearStartDate  = '2026-01-02';
@@ -1213,5 +1213,22 @@ describe('the four-hour grid on a multi-venue book — why 3M samples overnight 
     ];
     expect(resampleToSlots(gspc, SLOTS.map(d => Date.parse(d + 'Z'))).map(p => p.close))
       .toEqual([5000, 5000, 5000, 5000, 5050, 5100]);
+  });
+});
+
+// A coin's 1D with extended hours off reads from US close to US close, and on the day after Thanksgiving the close was 13:00
+// ET (18:00 UTC). Thanksgiving itself has no close, though the coin printed at 21:00 UTC.
+describe('crypto 1D US-session windows around an early close', () => {
+  const pts = ['2026-11-25T20:55', '2026-11-25T21:00', '2026-11-26T21:00', '2026-11-27T17:55', '2026-11-27T18:00',
+    '2026-11-27T18:30', '2026-11-27T21:00', '2026-11-27T22:30'].map((date, i) => ({ date, close: 100 + i }));
+  const mh = usMarketHoursUtc(new Date('2026-11-27T22:30:00Z'));
+  it('market closed: Wednesday 16:00 ET to Friday 13:00 ET, skipping the holiday', () => {
+    expect(windowBetweenLastTwoUsCloses(pts, mh, isUsTradingDateStr)?.map((p) => p.date))
+      .toEqual(['2026-11-25T21:00', '2026-11-26T21:00', '2026-11-27T17:55', '2026-11-27T18:00']);
+  });
+  it('the session open: from Wednesday\'s close (the half-day morning)', () => {
+    const morning = pts.slice(0, 4);
+    expect(windowSinceLastUsClose(morning, usMarketHoursUtc(new Date('2026-11-27T17:56:00Z')), isUsTradingDateStr)?.[0]?.date)
+      .toBe('2026-11-25T21:00');
   });
 });

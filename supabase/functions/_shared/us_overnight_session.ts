@@ -3,7 +3,10 @@
 // snapshot recorder can work out which five-minute buckets the overnight recorder owes (`recorder_watch.ts`); the
 // overnight recorder imports it and re-exports it for its pins.
 
-import { isUsMarketHolidayAt } from "./us_market_calendar.ts";
+import { isUsMarketHolidayAt, US_SESSION } from "./us_market_calendar.ts";
+
+/** The overnight session's ends in ET minutes of the day, from the shared session table: 20:00 to 04:00. */
+const NIGHT_FROM = US_SESSION.overnight, NIGHT_TO = US_SESSION.premarket;
 
 /**
  * ET hour-of-week helpers via Intl so DST is resolved by the runtime
@@ -37,7 +40,7 @@ function etParts(at: Date): { weekday: number; minutes: number } {
  */
 export function isOvernightWindow(at: Date): boolean {
   const { minutes } = etParts(at);
-  return minutes >= 20 * 60 || minutes < 4 * 60;
+  return minutes >= NIGHT_FROM || minutes < NIGHT_TO;
 }
 
 /**
@@ -49,8 +52,8 @@ export function isOvernightWindow(at: Date): boolean {
 export function isWeekendDeadZone(at: Date): boolean {
   const { weekday, minutes } = etParts(at);
   if (weekday === 6) return true;                 // all Saturday ET
-  if (weekday === 5) return minutes >= 20 * 60;   // Fri from 20:00 ET
-  if (weekday === 0) return minutes < 20 * 60;    // Sun until 20:00 ET
+  if (weekday === 5) return minutes >= NIGHT_FROM;   // Fri from 20:00 ET
+  if (weekday === 0) return minutes < NIGHT_FROM;    // Sun until 20:00 ET
   return false;
 }
 
@@ -66,7 +69,7 @@ export function isWeekendDeadZone(at: Date): boolean {
  */
 export function isHolidaySession(at: Date): boolean {
   const { minutes } = etParts(at);
-  const sessionAt = minutes >= 20 * 60 ? new Date(at.getTime() + 24 * 3_600_000) : at;
+  const sessionAt = minutes >= NIGHT_FROM ? new Date(at.getTime() + 24 * 3_600_000) : at;
   return isUsMarketHolidayAt(sessionAt);
 }
 
